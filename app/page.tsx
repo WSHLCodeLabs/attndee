@@ -49,7 +49,7 @@ export default function LandingPage() {
       {/* Footer */}
       <div className="absolute bottom-8 text-center">
         <p className="text-sm text-gray-400 font-light">
-          Powered by GPS • TOTP • Real-time
+          © {new Date().getFullYear()} Attndee. All rights reserved.
         </p>
       </div>
     </div>
