@@ -505,7 +505,8 @@ export default function CheckInPage() {
         if (data.error && (data.error.includes('Invalid or expired token') || data.error.includes('expired token'))) {
           console.log('🔴 Token expired - checking if already checked in first');
           // Only set expired_token if not already checked in
-          if (errorType !== 'already_checked_in') {
+          const currentErrorType = errorType as 'none' | 'already_checked_in' | 'gps_denied' | 'expired_token';
+          if (currentErrorType !== 'already_checked_in') {
             console.log('🔴 Setting expired token and switching to manual mode');
             setErrorType('expired_token');
             setStatus('manual'); // Set to manual, not idle (to avoid triggering useEffect loop)
