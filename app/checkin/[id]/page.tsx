@@ -104,7 +104,7 @@ if (typeof document !== 'undefined') {
   document.head.appendChild(style);
 }
 
-type CheckInStatus = 'idle' | 'profile_setup' | 'checking' | 'success' | 'error' | 'manual' | 'gps_required';
+type CheckInStatus = 'idle' | 'profile_setup' | 'checking' | 'success' | 'error' | 'manual' | 'gps_required' | 'already_checked_in';
 
 interface StudentProfile {
   student_id: string;
@@ -992,7 +992,8 @@ export default function CheckInPage() {
   }
 
   // Manual Mode - Show scan/PIN options (but NOT if already checked in)
-  if (errorType !== 'already_checked_in' && profile && roomName && (!tokenFromUrl || errorType === 'expired_token')) {
+  const currentErrorType = errorType as 'none' | 'already_checked_in' | 'gps_denied' | 'expired_token';
+  if (currentErrorType !== 'already_checked_in' && profile && roomName && (!tokenFromUrl || errorType === 'expired_token')) {
     return (
       <div className="min-h-screen bg-white flex flex-col animate-fadeIn">
         {/* Header */}
@@ -1098,7 +1099,7 @@ export default function CheckInPage() {
                     setMessage('Please enter a 6-digit PIN');
                   }
                 }}
-                disabled={pinCode.join('').length !== 6 || status === 'checking'}
+                disabled={pinCode.join('').length !== 6 || (status as CheckInStatus) === 'checking'}
                 className="w-full py-4 bg-black text-white text-base font-semibold rounded-full hover:bg-gray-800 active:scale-95 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg hover:shadow-xl"
               >
                 <svg
