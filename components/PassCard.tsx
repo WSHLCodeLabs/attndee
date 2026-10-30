@@ -1,36 +1,36 @@
 'use client';
 
-/**
- * PassCard Component - Attndee. Pass™
- * 
- * Purpose: Bottom slide-up card for creating student pass credentials
- * Features: Smooth animations, profile form, localStorage integration
- */
-
 import { useState } from 'react';
 
-interface StudentProfile {
+export interface StudentProfile {
   student_id: string;
   first_name: string;
   last_name: string;
   year_level: number;
+  last_updated_at?: string;
 }
 
-interface PassCardProps {
+export interface PassCardProps {
   onPassCreated: (profile: StudentProfile) => void;
   onDismiss?: () => void;
+  initialProfile?: StudentProfile | null;
 }
 
-export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
-  const [studentId, setStudentId] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [yearLevel, setYearLevel] = useState(1);
+export default function PassCard({
+  onPassCreated,
+  onDismiss,
+  initialProfile,
+}: PassCardProps) {
+  const [studentId, setStudentId] = useState(initialProfile?.student_id || '');
+  const [firstName, setFirstName] = useState(initialProfile?.first_name || '');
+  const [lastName, setLastName] = useState(initialProfile?.last_name || '');
+  const [yearLevel, setYearLevel] = useState(initialProfile?.year_level || 1);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
 
   const handleCreatePass = () => {
     if (!studentId.trim() || !firstName.trim() || !lastName.trim()) {
-      alert('Please fill in all required fields');
+      setErrorMessage('กรุณากรอกข้อมูลที่จำเป็นให้ครบทุกช่อง');
       return;
     }
 
@@ -39,12 +39,11 @@ export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       year_level: yearLevel,
+      last_updated_at: new Date().toISOString(),
     };
 
-    // Save to localStorage as "attndee_pass"
     localStorage.setItem('attndee_pass', JSON.stringify(newProfile));
 
-    // Animate out before calling callback
     setIsAnimatingOut(true);
     setTimeout(() => {
       onPassCreated(newProfile);
@@ -94,21 +93,32 @@ export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
             <h2 className="text-3xl font-bold text-black mb-2">
               Attndee<span className="text-blue-600">.</span> Pass™
             </h2>
-            <p className="text-gray-600">Create your digital student pass</p>
+            <p className="text-gray-600">
+              {initialProfile ? 'แก้ไขข้อมูลบัตรนิสิตดิจิทัลของคุณ' : 'สร้างบัตรนิสิตดิจิทัลประจำตัวของคุณ'}
+            </p>
           </div>
+
+          {errorMessage && (
+            <p className="text-sm text-red-600 text-center mb-4">
+              {errorMessage}
+            </p>
+          )}
 
           {/* Form */}
           <div className="space-y-4 mb-6">
             {/* Student ID */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Student ID <span className="text-red-500">*</span>
+                รหัสนิสิต <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                placeholder="e.g. 65130500xxx"
+                onChange={(e) => {
+                  setErrorMessage(null);
+                  setStudentId(e.target.value);
+                }}
+                placeholder="เช่น 6621650221"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors text-black font-mono"
                 maxLength={20}
               />
@@ -117,13 +127,16 @@ export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
             {/* First Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                First Name <span className="text-red-500">*</span>
+                ชื่อจริง (ไม่ต้องใส่คำนำหน้า) <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                placeholder="John"
+                onChange={(e) => {
+                  setErrorMessage(null);
+                  setFirstName(e.target.value);
+                }}
+                placeholder="เช่น กฤตินล"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors text-black"
                 maxLength={50}
               />
@@ -132,13 +145,16 @@ export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
             {/* Last Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Last Name <span className="text-red-500">*</span>
+                นามสกุล <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                placeholder="Doe"
+                onChange={(e) => {
+                  setErrorMessage(null);
+                  setLastName(e.target.value);
+                }}
+                placeholder="เช่น แสงขาว"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-black transition-colors text-black"
                 maxLength={50}
               />
@@ -147,7 +163,7 @@ export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
             {/* Year Level with +/- controls */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
-                Year Level
+                ชั้นปี
               </label>
               <div className="flex items-center justify-center gap-4">
                 <button
@@ -163,7 +179,7 @@ export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
                     {yearLevel}
                   </div>
                   <div className="text-sm text-gray-500 mt-1">
-                    {yearLevel === 1 ? '1st' : yearLevel === 2 ? '2nd' : yearLevel === 3 ? '3rd' : `${yearLevel}th`} Year
+                    ปี {yearLevel}
                   </div>
                 </div>
                 <button
@@ -183,12 +199,12 @@ export default function PassCard({ onPassCreated, onDismiss }: PassCardProps) {
             onClick={handleCreatePass}
             className="w-full py-4 bg-black text-white text-lg font-medium rounded-full hover:bg-gray-800 active:bg-gray-900 transition-all focus:outline-none focus:ring-4 focus:ring-gray-300"
           >
-            Create Pass
+            {initialProfile ? 'บันทึกข้อมูลบัตร' : 'สร้างบัตรและเริ่มเช็คชื่อ'}
           </button>
 
           {/* Info */}
           <p className="text-xs text-gray-400 text-center mt-4">
-            Your pass is stored securely on this device
+            บัตรนิสิตจะถูกจัดเก็บไว้บนอุปกรณ์นี้อย่างปลอดภัย (สามารถแก้ไขได้ทุก 7 วัน)
           </p>
         </div>
       </div>

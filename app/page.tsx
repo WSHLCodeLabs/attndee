@@ -1,57 +1,761 @@
 'use client';
 
 /**
- * Landing Page - Attndee
- * 
- * Purpose: Clean landing page with branding and single CTA
- * Action: Redirect to /create for room creation
+ * Attndee. - Minimalist 2-State & Responsive Home / Create Class Workspace
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Loader from '@/components/Loader';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { MapPin, X } from 'lucide-react';
+import { supabase } from '@/utils/supabase';
+import {
+  parseSpreadsheetBuffer,
+  parseRosterGrid,
+  ParsedRosterResult,
+} from '@/utils/xlsx-helper';
 
-export default function LandingPage() {
+// Dynamic imports for react-leaflet (SSR-safe)
+const MapContainer = dynamic(
+  () => import('react-leaflet').then((mod) => mod.MapContainer),
+  { ssr: false }
+);
+const TileLayer = dynamic(
+  () => import('react-leaflet').then((mod) => mod.TileLayer),
+  { ssr: false }
+);
+const Marker = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Marker),
+  { ssr: false }
+);
+const Popup = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Popup),
+  { ssr: false }
+);
+const Circle = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Circle),
+  { ssr: false }
+);
+
+export default function HomePage() {
   const router = useRouter();
-  const [isNavigating, setIsNavigating] = useState(false);
 
-  const handleCreateClass = () => {
-    setIsNavigating(true);
-    router.push('/create');
+  // Form state
+  const [roomName, setRoomName] = useState('');
+  const [checkinDuration, setCheckinDuration] = useState(5);
+  const [markerPosition, setMarkerPosition] = useState<[number, number]>([13.8476, 100.5696]);
+  const detectionRadius = 50;
+  const [mapKey, setMapKey] = useState(0);
+
+  // Header Banner state
+  const [showKuBanner, setShowKuBanner] = useState(true);
+
+  // Responsive viewport detection
+  const [isDesktop, setIsDesktop] = useState(true);
+
+  // XLSX Import state
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [parsedRoster, setParsedRoster] = useState<ParsedRosterResult | null>(null);
+  const [selectedIdColumn, setSelectedIdColumn] = useState<string>('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // UI state
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [hasGPS, setHasGPS] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mediaQuery = window.matchMedia('(min-width: 1024px)');
+    const updateViewport = (e: MediaQueryListEvent | MediaQueryList) => {
+      setIsDesktop(e.matches);
+    };
+    updateViewport(mediaQuery);
+    mediaQuery.addEventListener('change', updateViewport);
+    return () => mediaQuery.removeEventListener('change', updateViewport);
+  }, []);
+
+  const generateSecretKey = (): string => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let secret = '';
+    for (let i = 0; i < 32; i++) {
+      secret += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return secret;
   };
 
-  if (isNavigating) {
-    return <Loader />;
-  }
+  const handlePinCurrentLocation = useCallback((showAlerts = true) => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      if (showAlerts) {
+        setError('เบราว์เซอร์ของคุณไม่รองรับการระบุตำแหน่ง');
+      }
+      return;
+    }
+
+    setIsLocating(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setMarkerPosition([lat, lng]);
+        setHasGPS(true);
+        setIsLocating(false);
+        setMapKey((prev) => prev + 1);
+      },
+      () => {
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 25000,
+        maximumAge: 0,
+      }
+    );
+  }, []);
+
+  useEffect(() => {
+    handlePinCurrentLocation(false);
+  }, [handlePinCurrentLocation]);
+
+  const MapController = () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const leaflet = require('react-leaflet');
+    const map = leaflet.useMap();
+
+    useEffect(() => {
+      const timer1 = setTimeout(() => map.invalidateSize(), 100);
+      const timer2 = setTimeout(() => map.invalidateSize(), 350);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }, [map]);
+
+    leaflet.useMapEvents({
+      click(e: any) {
+        setMarkerPosition([e.latlng.lat, e.latlng.lng]);
+        setHasGPS(false);
+      },
+    });
+    return null;
+  };
+
+  const DraggableMarker = () => {
+    const eventHandlers = useMemo(
+      () => ({
+        dragend(e: any) {
+          const marker = e.target;
+          const position = marker.getLatLng();
+          setMarkerPosition([position.lat, position.lng]);
+          setHasGPS(false);
+        },
+      }),
+      []
+    );
+
+    useEffect(() => {
+      if (typeof window !== 'undefined') {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const L = require('leaflet');
+        delete (L.Icon.Default.prototype as any)._getIconUrl;
+        L.Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+          iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+        });
+      }
+    }, []);
+
+    return (
+      <Marker draggable={true} eventHandlers={eventHandlers} position={markerPosition}>
+        <Popup>
+          <div className="text-center text-xs">
+            <p className="font-semibold mb-0.5">
+              {hasGPS ? 'พิกัดปัจจุบันของคุณ' : 'ตำแหน่งห้องเรียน'}
+            </p>
+            <p className="text-[11px] text-gray-500">
+              {markerPosition[0].toFixed(6)}, {markerPosition[1].toFixed(6)}
+            </p>
+          </div>
+        </Popup>
+      </Marker>
+    );
+  };
+
+  const processFile = (file: File) => {
+    setError(null);
+    setUploadedFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target?.result as ArrayBuffer;
+        const parsed = parseSpreadsheetBuffer(buffer, 'array');
+        setParsedRoster(parsed);
+        setSelectedIdColumn(parsed.selectedIdColumn);
+        if (parsed.xlsxBase64) {
+          try {
+            localStorage.setItem('attndee_latest_xlsx_base64', parsed.xlsxBase64);
+          } catch {}
+        }
+
+        if (parsed.suggestedRoomName && parsed.suggestedRoomName.trim()) {
+          setRoomName(parsed.suggestedRoomName.trim());
+        }
+      } catch {
+        setError('ไม่สามารถอ่านไฟล์รายชื่อได้ กรุณาตรวจสอบไฟล์ .xlsx');
+        setUploadedFile(null);
+        setParsedRoster(null);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const handleResetImport = () => {
+    setUploadedFile(null);
+    setParsedRoster(null);
+    setSelectedIdColumn('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleColumnClick = (colIndex: number) => {
+    if (!parsedRoster) return;
+    const updated = parseRosterGrid(parsedRoster.rawGrid, colIndex);
+    updated.xlsxBase64 = parsedRoster.xlsxBase64;
+    // Prevent accidental clicks on non-ID columns from wiping out the detected roster
+    if (updated.students.length === 0) return;
+    if (parsedRoster.isKuFormat && updated.students.length < parsedRoster.students.length / 2) {
+      return;
+    }
+    setParsedRoster(updated);
+    setSelectedIdColumn(updated.selectedIdColumn);
+  };
+
+  const handleLaunchRoom = async () => {
+    if (!roomName.trim()) {
+      setError('กรุณากรอกชื่อคลาสของคุณ');
+      return;
+    }
+
+    setIsCreating(true);
+    setError(null);
+
+    try {
+      const secretKey = generateSecretKey();
+
+          const studentListData = parsedRoster
+        ? {
+            xlsx_data: parsedRoster.rawGrid,
+            xlsx_base64: parsedRoster.xlsxBase64,
+            id_column: selectedIdColumn,
+            checkmark_column: parsedRoster.nextAttendanceColumn || 'new',
+            filename: uploadedFile?.name || 'student_list.xlsx',
+            has_roster: parsedRoster.students.length > 0,
+            course_meta: parsedRoster.courseMeta,
+            roster_students: parsedRoster.students,
+            radius_meters: detectionRadius,
+            is_closed: false,
+            device_checkins: [],
+          }
+        : null;
+
+      const { data, error: insertError } = await supabase
+        .from('active_rooms')
+        .insert({
+          room_name: roomName.trim(),
+          secret_key: secretKey,
+          teacher_lat: markerPosition[0],
+          teacher_long: markerPosition[1],
+          checkin_duration_mins: checkinDuration,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      if (studentListData && data?.id) {
+        try {
+          localStorage.setItem(`attndee_room_roster_${data.id}`, JSON.stringify(studentListData));
+          if (parsedRoster?.xlsxBase64) {
+            localStorage.setItem('attndee_latest_xlsx_base64', parsedRoster.xlsxBase64);
+          }
+        } catch (storageErr) {
+          console.warn('Could not save roster to localStorage:', storageErr);
+        }
+
+        // Register roster fingerprints with backend runtime memory (non-blocking)
+        fetch('/api/checkin', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room_id: data.id,
+            roster_students: studentListData.roster_students,
+            radius_meters: detectionRadius,
+          }),
+        }).catch(() => {});
+      }
+
+      router.push(`/room/${data.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ไม่สามารถสร้างห้องเช็คชื่อได้');
+      setIsCreating(false);
+    }
+  };
+
+  const hasFile = Boolean(parsedRoster);
+
+  const previewStartRow = useMemo(() => {
+    if (!parsedRoster) return 0;
+    return parsedRoster.isKuFormat ? parsedRoster.courseMeta.header_row_index : 0;
+  }, [parsedRoster]);
+
+  const previewRowsWithIndex = useMemo(() => {
+    if (!parsedRoster) return [];
+    const result: Array<{ row: any[]; actualRowIndex: number }> = [];
+    for (let r = previewStartRow; r < parsedRoster.rawGrid.length; r++) {
+      const row = parsedRoster.rawGrid[r] || [];
+      const hasAnyContent = row.some(
+        (cell) => cell !== undefined && cell !== null && String(cell).trim() !== ''
+      );
+      if (hasAnyContent) {
+        result.push({ row, actualRowIndex: r });
+      }
+    }
+    return result;
+  }, [parsedRoster, previewStartRow]);
+
+  const validStudentRowSet = useMemo(() => {
+    if (!parsedRoster) return new Set<number>();
+    return new Set(parsedRoster.students.map((s) => s.row_index));
+  }, [parsedRoster]);
+
+  const visibleColumnCount = useMemo(() => {
+    if (!parsedRoster || previewRowsWithIndex.length === 0) return 0;
+    let maxCol = parsedRoster.nextAttendanceColIndex + 1;
+    for (const { row } of previewRowsWithIndex) {
+      for (let c = 0; c < Math.min(row.length, 22); c++) {
+        if (row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== '') {
+          if (c + 1 > maxCol) maxCol = c + 1;
+        }
+      }
+    }
+    return Math.max(maxCol, 1);
+  }, [parsedRoster, previewRowsWithIndex]);
+
+  const todayDateLabel = useMemo(() => new Date().toLocaleDateString('th-TH'), []);
+
+  const renderMapBox = (roundedClass: string) => (
+    <div className={`relative w-full h-full overflow-hidden bg-[#cbe6cc] ${roundedClass}`}>
+      <MapContainer
+        key={`${mapKey}-${hasFile ? 'left' : 'right'}-${isDesktop ? 'lg' : 'sm'}`}
+        center={markerPosition}
+        zoom={16}
+        zoomControl={false}
+        scrollWheelZoom={true}
+        style={{ height: '100%', width: '100%' }}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <Circle
+          center={markerPosition}
+          radius={detectionRadius}
+          pathOptions={{
+            color: '#0051fc',
+            fillColor: '#0051fc',
+            fillOpacity: 0.18,
+          }}
+        />
+        <MapController />
+        <DraggableMarker />
+      </MapContainer>
+
+      {/* Floating "ปักพิกัดปัจจุบัน" Pill Button inside bottom-right of map */}
+      <button
+        type="button"
+        onClick={() => handlePinCurrentLocation(true)}
+        disabled={isLocating}
+        className="absolute bottom-5 right-5 z-[400] flex items-center gap-2 px-4 py-2.5 bg-[#0051fc] hover:bg-blue-700 active:scale-95 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-md transition-all disabled:opacity-60 cursor-pointer"
+      >
+        <MapPin size={16} className="fill-white text-[#0051fc]" />
+        <span>{isLocating ? 'กำลังค้นหา...' : 'ปักพิกัดปัจจุบัน'}</span>
+      </button>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6">
-      {/* Logo/Branding */}
-      <div className="mb-12 text-center">
-        <h1 className="text-8xl md:text-9xl font-bold tracking-tight text-black mb-2">
-          Attndee<span className="text-blue-600">.</span>
-        </h1>
-        <p className="text-lg text-gray-500 font-light mt-4">
-          Instant Rolling QR Attendance
-        </p>
-      </div>
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        setIsDragging(false);
+      }}
+      onDrop={handleDrop}
+      className="min-h-screen lg:h-screen bg-white flex flex-col lg:overflow-hidden relative"
+    >
+      {/* Leaflet CSS */}
+      <style jsx global>{`
+        @import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
+        .leaflet-container {
+          width: 100%;
+          height: 100%;
+          z-index: 0;
+        }
+        .leaflet-control-attribution {
+          font-size: 9px !important;
+          background: rgba(255, 255, 255, 0.5) !important;
+        }
+      `}</style>
 
-      {/* Primary CTA */}
-      <button
-        onClick={handleCreateClass}
-        className="px-12 py-5 bg-black text-white text-lg font-medium rounded-full
-                   hover:bg-gray-800 active:bg-gray-900 transition-all duration-200
-                   focus:outline-none focus:ring-4 focus:ring-gray-300"
-      >
-        Create Class
-      </button>
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        onChange={handleFileUpload}
+        className="hidden"
+        id="xlsx-upload"
+      />
 
-      {/* Footer */}
-      <div className="absolute bottom-8 text-center">
-        <p className="text-sm text-gray-400 font-light">
-          © {new Date().getFullYear()} Attndee. All rights reserved.
-        </p>
-      </div>
+      {/* Fullscreen Drag Overlay Feedback */}
+      {isDragging && (
+        <div className="fixed inset-4 z-50 border-2 border-dashed border-[#0051fc] bg-blue-50/40 rounded-3xl flex items-center justify-center pointer-events-none">
+          <div className="bg-white px-6 py-3 rounded-full shadow-lg border border-blue-200 text-sm font-bold text-[#0051fc]">
+            วางไฟล์รายชื่อ (.xlsx) ที่นี่ได้เลย
+          </div>
+        </div>
+      )}
+
+      {/* TOP HEADER BAR */}
+      <header className="w-full max-w-[1600px] mx-auto px-6 sm:px-12 lg:px-20 pt-8 sm:pt-10 pb-6 flex flex-wrap items-center justify-between gap-4 flex-shrink-0">
+        {/* Left: Attndee. Logo */}
+        <Link href="/" className="text-3xl sm:text-[38px] font-bold tracking-tight text-black select-none leading-none">
+          Attndee<span className="text-[#0051fc]">.</span>
+        </Link>
+
+        {/* Right: My KU Notification Pill + คู่มือ Button */}
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+          {showKuBanner && (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="relative flex items-center gap-3 px-4 sm:px-5 py-2 bg-[#f4fbf7] border border-[#2bb673] rounded-xl cursor-pointer hover:bg-[#eaf8f0] transition-colors"
+              title="คลิกเพื่ออัปโหลดไฟล์รายชื่อจาก myKU"
+            >
+              {/* Red "ใหม่" Badge */}
+              <span className="absolute -top-2.5 -left-3 bg-[#ff0000] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full leading-tight shadow-xs">
+                ใหม่
+              </span>
+
+              {/* Official KU Logo */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/assets/KU_Logo_PNG.png"
+                alt="KU Logo"
+                className="h-7 w-auto object-contain flex-shrink-0"
+              />
+
+              <span className="text-xs sm:text-sm font-bold text-black whitespace-nowrap">
+                รองรับไฟล์รายชื่อจาก My KU แล้ว
+              </span>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowKuBanner(false);
+                }}
+                className="ml-1 text-black hover:text-gray-600 transition-colors p-0.5 cursor-pointer"
+                aria-label="ปิดการแจ้งเตือน"
+              >
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
+          <Link
+            href="/docs"
+            className="px-7 sm:px-9 py-2.5 bg-[#efefef] hover:bg-[#e4e4e4] text-black text-xs sm:text-sm font-bold rounded-lg transition-colors"
+          >
+            คู่มือ
+          </Link>
+        </div>
+      </header>
+
+      {/* MAIN WORKSPACE CONTENT */}
+      <main className="flex-1 w-full max-w-[1600px] mx-auto px-6 sm:px-12 lg:px-20 pt-2 sm:pt-4 pb-8 lg:pb-12 flex flex-col lg:flex-row items-stretch justify-between gap-10 lg:gap-24 xl:gap-32 min-h-0">
+        {/* LEFT COLUMN */}
+        <div
+          className={`w-full lg:w-[480px] xl:w-[520px] flex-shrink-0 flex flex-col min-h-0 ${
+            hasFile ? 'justify-between gap-4' : 'justify-start pt-4 lg:pt-8 gap-5'
+          }`}
+        >
+          {/* Hero Heading + Handwritten Callout (Shown in State 1 before XLSX upload) */}
+          {!hasFile && (
+            <div className="flex items-start justify-between gap-2 w-full pb-1">
+              <h1 className="text-[28px] sm:text-[34px] xl:text-[36px] font-bold text-black leading-[1.28] tracking-tight whitespace-nowrap flex-shrink-0 pt-2">
+                เช็คชื่อง่ายๆ
+                <br />
+                ได้ใน 3 ขั้นตอน!
+              </h1>
+
+              {/* Handwritten Drag-and-Drop Callout + Arrow aligned strictly within the right edge of the form */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="group flex flex-col items-end text-right cursor-pointer focus:outline-none flex-shrink-0 max-w-[210px] sm:max-w-none"
+                title="คลิกเพื่อเลือกไฟล์ .xlsx หรือลากไฟล์มาวาง"
+              >
+                <span
+                  style={{ fontFamily: 'var(--font-kaohom), sans-serif' }}
+                  className="text-[17px] sm:text-[19px] xl:text-[21px] text-black -rotate-6 group-hover:text-[#0051fc] transition-colors whitespace-nowrap leading-none mr-1"
+                >
+                  หรือลากไฟล์รายชื่อลงมาใส่ก็ได้นะ!
+                </span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/assets/arrowpointingdown.png"
+                  alt=""
+                  className="w-14 sm:w-16 xl:w-[68px] h-auto mr-3 mt-2 select-none pointer-events-none"
+                />
+              </button>
+            </div>
+          )}
+
+          {/* Step 1: Class Name Input */}
+          <div className="flex-shrink-0">
+            <input
+              type="text"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              placeholder="ชื่อคลาสของคุณ"
+              className="w-full px-5 py-4 border border-neutral-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-black transition-all text-base sm:text-lg text-black placeholder:text-gray-300 bg-white"
+              maxLength={120}
+            />
+          </div>
+
+          {/* Step 2: 3 Duration Buttons (5, 10, 15 mins) */}
+          <div className="grid grid-cols-3 gap-4 flex-shrink-0">
+            {[5, 10, 15].map((mins) => {
+              const isSelected = checkinDuration === mins;
+              return (
+                <button
+                  key={mins}
+                  type="button"
+                  onClick={() => setCheckinDuration(mins)}
+                  className={`py-4 rounded-xl text-sm sm:text-base font-semibold transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#6ea0f5] border border-[#3b78e7] text-white'
+                      : 'bg-white border border-neutral-800 text-black hover:bg-gray-50'
+                  }`}
+                >
+                  {mins} นาที
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Step 3 (In Left Column when file is uploaded OR on Mobile/Tablet < 1024px) */}
+          {(hasFile || !isDesktop) && (
+            <div className="w-full h-[230px] sm:h-[260px] lg:flex-1 lg:min-h-[210px] flex-shrink-0">
+              {renderMapBox('rounded-[26px]')}
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <p className="text-xs sm:text-sm text-red-600 font-medium px-1 flex-shrink-0">
+              {error}
+            </p>
+          )}
+
+          {/* Primary Blue Pill Button (Grayed out when required details are incomplete) */}
+          <div className="pt-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={handleLaunchRoom}
+              disabled={isCreating || !roomName.trim()}
+              className="w-full py-4 sm:py-4.5 bg-[#0051fc] hover:bg-blue-700 active:scale-[0.99] text-white text-base sm:text-lg font-bold rounded-full transition-all disabled:bg-gray-200 disabled:text-gray-400 disabled:hover:bg-gray-200 disabled:active:scale-100 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {isCreating ? 'กำลังเปิดห้องเช็คชื่อ...' : 'เริ่มเช็คชื่อเลย'}
+            </button>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          {/* State 1 (Desktop): Large Classroom Map on the Right */}
+          {!hasFile && isDesktop && (
+            <div className="w-full h-full">
+              {renderMapBox('rounded-[32px]')}
+            </div>
+          )}
+
+          {/* State 2: XLSX Preview Window on the Right (or stacked below on Mobile/Tablet) */}
+          {hasFile && parsedRoster && (
+            <div className="w-full h-[460px] lg:h-full bg-[#f7f7f7] border border-gray-200 rounded-2xl flex flex-col overflow-hidden">
+              {/* Preview Header */}
+              <div className="px-5 py-3.5 bg-white border-b border-gray-200 flex items-center justify-between gap-3 flex-shrink-0">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-black truncate">
+                      {uploadedFile?.name || 'XLSX Preview'}
+                    </h3>
+                    <span className="text-xs px-2.5 py-0.5 bg-gray-100 text-black rounded-full font-semibold flex-shrink-0">
+                      {parsedRoster.students.length} คน
+                    </span>
+                    <span className="text-xs px-2.5 py-0.5 bg-blue-50 text-[#0051fc] border border-blue-200 rounded-full font-semibold flex-shrink-0">
+                      รหัสนิสิต: คอลัมน์ {selectedIdColumn}
+                    </span>
+                    <span className="text-xs px-2.5 py-0.5 bg-[#f2fbf7] text-[#1f9d5c] border border-[#2bb673] rounded-full font-semibold flex-shrink-0">
+                      เติมคะแนน (1/0): คอลัมน์ {parsedRoster.nextAttendanceColumn}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 truncate">
+                    คลิกหัวคอลัมน์เพื่อเปลี่ยนคอลัมน์รหัสนิสิต • ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn} อัตโนมัติ
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleResetImport}
+                  className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
+                  title="นำไฟล์ออก"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Clean Spreadsheet Table */}
+              <div className="flex-1 overflow-auto bg-white">
+                <table className="w-full text-xs sm:text-sm" style={{ borderCollapse: 'collapse' }}>
+                  <thead className="sticky top-0 z-10">
+                    <tr>
+                      <th className="border-b border-r border-gray-200 px-3 py-2.5 bg-gray-100 font-semibold text-center text-gray-600 w-10">
+                        #
+                      </th>
+                      {parsedRoster.columnHeaders
+                        .slice(0, visibleColumnCount)
+                        .map((header, i) => {
+                          const isIdColumn = header === selectedIdColumn;
+                          const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
+                          return (
+                            <th
+                              key={i}
+                              onClick={() => {
+                                if (!isAttendanceCol) handleColumnClick(i);
+                              }}
+                              className={`border-b border-r border-gray-200 px-3 py-2.5 font-semibold text-left transition-colors whitespace-nowrap ${
+                                isIdColumn
+                                  ? 'bg-[#0051fc] text-white cursor-pointer'
+                                  : isAttendanceCol
+                                  ? 'bg-[#2bb673] text-white cursor-default'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span>{header}</span>
+                                {isIdColumn && (
+                                  <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold">
+                                    รหัสนิสิต
+                                  </span>
+                                )}
+                                {isAttendanceCol && (
+                                  <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold">
+                                    ช่องเติมคะแนน (1/0)
+                                  </span>
+                                )}
+                              </div>
+                            </th>
+                          );
+                        })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRowsWithIndex.map(({ row, actualRowIndex }, rowIdx) => (
+                      <tr
+                        key={actualRowIndex}
+                        className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'}
+                      >
+                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center text-gray-400 font-mono text-xs">
+                          {rowIdx + 1}
+                        </td>
+                        {Array.from({ length: visibleColumnCount }).map((_, colIdx) => {
+                          const isIdColumn =
+                            parsedRoster.columnHeaders[colIdx] === selectedIdColumn;
+                          const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
+                          const val = row[colIdx];
+
+                          if (isAttendanceCol) {
+                            const isHeaderRow =
+                              actualRowIndex === parsedRoster.courseMeta.header_row_index;
+                            const isStudentRow = validStudentRowSet.has(actualRowIndex);
+
+                            if (isHeaderRow || isStudentRow) {
+                              return (
+                                <td
+                                  key={colIdx}
+                                  className="border-b border-r border-[#2bb673]/30 px-3 py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap"
+                                >
+                                  {isHeaderRow ? todayDateLabel : '1 / 0'}
+                                </td>
+                              );
+                            }
+
+                            return (
+                              <td
+                                key={colIdx}
+                                className="border-b border-r border-gray-200 px-3 py-2 text-gray-700"
+                              />
+                            );
+                          }
+
+                          return (
+                            <td
+                              key={colIdx}
+                              className={`border-b border-r border-gray-200 px-3 py-2 text-gray-700 truncate max-w-[200px] ${
+                                isIdColumn ? 'bg-blue-50/50 font-semibold text-black font-mono' : ''
+                              }`}
+                            >
+                              {val !== undefined && val !== null && String(val).trim() !== ''
+                                ? String(val)
+                                : ''}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

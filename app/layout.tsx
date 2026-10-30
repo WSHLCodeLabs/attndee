@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, IBM_Plex_Sans_Thai } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -10,6 +11,18 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const ibmPlexSansThai = IBM_Plex_Sans_Thai({
+  variable: "--font-ibm-thai",
+  subsets: ["thai", "latin"],
+  weight: ["300", "400", "500", "600", "700"],
+});
+
+const lkKaohom = localFont({
+  src: "../public/assets/fonts/LKKaohom-Freecomm.ttf",
+  variable: "--font-kaohom",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -23,9 +36,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="th">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${ibmPlexSansThai.variable} ${lkKaohom.variable} antialiased`}
       >
         {children}
       </body>
