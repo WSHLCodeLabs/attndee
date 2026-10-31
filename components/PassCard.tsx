@@ -87,7 +87,21 @@ export default function PassCard({
           animation: isAnimatingOut ? '' : 'slideUp 300ms ease-out',
         }}
       >
-        <div className="max-w-md mx-auto px-6 py-8">
+        <div className="max-w-md mx-auto px-6 py-8 relative">
+          {/* Close button if dismissable */}
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-500 hover:text-black flex items-center justify-center transition-all cursor-pointer"
+              aria-label="ปิด"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+
           {/* Header */}
           <div className="text-center mb-6">
             <h2 className="text-3xl font-bold text-black mb-2">

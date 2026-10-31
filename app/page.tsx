@@ -498,8 +498,16 @@ export default function HomePage() {
           )}
 
           <Link
+            href="/pass"
+            className="px-4 sm:px-5 py-2.5 border border-gray-300 hover:border-black text-gray-800 hover:text-black text-xs sm:text-sm font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+            title="ดูหรือแก้ไขบัตรนิสิต Attndee Pass™ ของคุณ"
+          >
+            <span>💳 บัตรนิสิต</span>
+          </Link>
+
+          <Link
             href="/docs"
-            className="px-7 sm:px-9 py-2.5 bg-[#efefef] hover:bg-[#e4e4e4] text-black text-xs sm:text-sm font-bold rounded-lg transition-colors"
+            className="px-6 sm:px-8 py-2.5 bg-[#efefef] hover:bg-[#e4e4e4] text-black text-xs sm:text-sm font-bold rounded-lg transition-colors"
           >
             คู่มือ
           </Link>

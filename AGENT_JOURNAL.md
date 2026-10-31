@@ -147,5 +147,24 @@ During the architectural audit and pre-production refactoring passes, several cr
   - Maintained strict anti-cheat: Haversine GPS <= 50m radius, 30s TOTP + grace window, and physical hardware fingerprinting remain fully enforced.
   - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
 - **What remains**:
-  - Multi-student concurrent load testing under unstable mobile connections.
+  - Live testing with mobile devices in real classroom network conditions.
+
+### [2026-10-31] Dedicated Attndee Pass™ Hub & Omnipresent Edit Buttons
+- **What was done**:
+  1. **Omnipresent Profile Pill in Check-in Header**:
+     - Added global `renderHeader()` in `app/checkin/[id]/page.tsx` rendering an interactive profile pill `[👤 Name] [✏️ แก้ไขบัตร]` across all states (Success, Already Checked In, Out of Range, Closed, Blocked, Manual, Checking).
+  2. **Success & Already-Checked-In Profile Cards**:
+     - Added explicit card on both Success and Already-Checked-In screens displaying student ID, full name, year level, and a prominent `[✏️ แก้ไขข้อมูลบัตร]` button.
+     - Ensured `{showPassCard && <PassCard ... />}` is mounted in all early return blocks.
+  3. **PassCard Dismissal Fix**:
+     - Added dedicated `✕` close button in `components/PassCard.tsx` when `onDismiss` is provided.
+  4. **Dedicated `/pass` Route**:
+     - Created `app/pass/page.tsx` enabling students to view their digital card, edit details, or reset credentials anytime outside classroom sessions.
+  5. **Homepage Navigation**:
+     - Added `[💳 บัตรนิสิต]` link in `app/page.tsx` top navbar.
+- **Key decisions made**:
+  - Kept student identity easily accessible and editable without losing fast-path check-in speeds.
+  - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
+- **What remains**:
+  - Tester validation of the new `/pass` hub and in-session edit buttons.
 
