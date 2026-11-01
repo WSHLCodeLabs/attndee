@@ -153,18 +153,21 @@ During the architectural audit and pre-production refactoring passes, several cr
 - **What was done**:
   1. **Omnipresent Profile Pill in Check-in Header**:
      - Added global `renderHeader()` in `app/checkin/[id]/page.tsx` rendering an interactive profile pill `[👤 Name] [✏️ แก้ไขบัตร]` across all states (Success, Already Checked In, Out of Range, Closed, Blocked, Manual, Checking).
-  2. **Success & Already-Checked-In Profile Cards**:
-     - Added explicit card on both Success and Already-Checked-In screens displaying student ID, full name, year level, and a prominent `[✏️ แก้ไขข้อมูลบัตร]` button.
-     - Ensured `{showPassCard && <PassCard ... />}` is mounted in all early return blocks.
-  3. **PassCard Dismissal Fix**:
+  2. **PassCard Dismissal**:
      - Added dedicated `✕` close button in `components/PassCard.tsx` when `onDismiss` is provided.
-  4. **Dedicated `/pass` Route**:
-     - Created `app/pass/page.tsx` enabling students to view their digital card, edit details, or reset credentials anytime outside classroom sessions.
-  5. **Homepage Navigation**:
-     - Added `[💳 บัตรนิสิต]` link in `app/page.tsx` top navbar.
 - **Key decisions made**:
-  - Kept student identity easily accessible and editable without losing fast-path check-in speeds.
+  - Kept student identity easily accessible and editable via header pill modal without losing fast-path check-in speeds.
+  - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
+
+### [2026-11-01] Minimalist UI Restoration & Redundancy Removal
+- **What was done**:
+  1. **Removed Redundant Middle Cards**: Removed the middle gray card container from both the Success and Already Checked In views in `app/checkin/[id]/page.tsx`, restoring the original clean typography layout.
+  2. **Removed Header Divider Border**: Removed `border-b border-gray-100` from `renderHeader()` in `app/checkin/[id]/page.tsx` to restore the seamless top navigation bar.
+  3. **Removed Teacher Workspace Student Pass Link**: Removed the "บัตรนิสิต" button from `app/page.tsx` and removed the `/pass` route, keeping the teacher workspace dedicated strictly to the instructor experience.
+  4. **Preserved Profile Editing via Top-Right Pill**: Students and testers can tap their name pill `[👤 Name แก้ไขบัตร]` at the top right of the check-in view to open the `PassCard` modal with the `✕` close button anytime.
+- **Key decisions made**:
+  - Restored the minimalist typography aesthetic without boxed containers or separator lines.
   - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
 - **What remains**:
-  - Tester validation of the new `/pass` hub and in-session edit buttons.
+  - Ready for final deployment to Vercel.
 

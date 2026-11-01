@@ -481,9 +481,9 @@ export default function CheckInPage() {
 
   const cooldownInfo = profile ? getPassCooldownStatus(profile.last_updated_at) : null;
 
-  // Global Header with Profile Chip on every screen
+  // Global Header with Profile Chip on every screen (Clean, no divider border)
   const renderHeader = () => (
-    <div className="px-6 py-5 flex items-center justify-between border-b border-gray-100 bg-white">
+    <div className="px-6 py-6 flex items-center justify-between">
       <h1 className="text-xl font-bold text-black tracking-tight">
         Attndee<span className="text-blue-600">.</span> Pass™
       </h1>
@@ -702,15 +702,15 @@ export default function CheckInPage() {
     );
   }
 
-  // Success screen (Minimalist Thai + Profile Card with Edit Button)
+  // Success screen (Minimalist Thai)
   if (status === 'success') {
     return (
       <div className="min-h-screen bg-white flex flex-col">
         {renderHeader()}
 
-        <div className="px-6 pt-12 sm:pt-16 flex-1 flex flex-col items-center text-center">
-          <div className="mb-6">
-            <div className="w-16 h-16 rounded-full border-4 border-black flex items-center justify-center mx-auto">
+        <div className="px-6 pt-20 flex-1">
+          <div className="mb-8">
+            <div className="w-16 h-16 rounded-full border-4 border-black flex items-center justify-center">
               <svg
                 className="w-8 h-8 text-black"
                 fill="none"
@@ -727,47 +727,25 @@ export default function CheckInPage() {
             </div>
           </div>
 
-          <h2 className="text-3xl font-bold text-black mb-2">
+          <h2 className="text-3xl font-bold text-black mb-4">
             เช็คชื่อสำเร็จแล้ว!
           </h2>
 
-          <p className="text-base text-gray-600 mb-6">
-            เข้าสู่ห้องเรียน <span className="font-bold text-black">{roomName || 'ห้องเรียน'}</span>
-          </p>
-
-          {/* Explicit Pass Profile Card with Edit Button */}
           {profile && (
-            <div className="w-full max-w-md bg-gray-50 border border-gray-200 rounded-2xl p-5 mb-6 text-left shadow-xs">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                  บัตรนิสิตที่ใช้เช็คชื่อ
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowPassCard(true)}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                  แก้ไขข้อมูลบัตร
-                </button>
-              </div>
-
-              <div className="text-lg font-bold text-black leading-tight">
-                {profile.first_name} {profile.last_name}
-              </div>
-
-              <div className="text-xs text-gray-600 font-mono mt-1.5 flex items-center gap-3">
-                <span>รหัส: {profile.student_id}</span>
-                <span>•</span>
-                <span>ชั้นปีที่ {profile.year_level}</span>
-              </div>
+            <div className="mb-8">
+              <p className="text-base text-gray-600 mb-1">
+                ยินดีต้อนรับ, <span className="font-semibold text-black">{profile.first_name} {profile.last_name}</span>
+              </p>
+              <p className="text-base text-gray-600 mb-2">
+                เข้าสู่ห้องเรียน
+              </p>
+              <h3 className="text-3xl font-bold text-black leading-tight">
+                {roomName || 'ห้องเรียน'}
+              </h3>
             </div>
           )}
 
-          <p className="text-sm text-gray-400">
+          <p className="text-base text-gray-600">
             คุณสามารถปิดหน้าต่างนี้ได้เลย
           </p>
         </div>
@@ -789,15 +767,15 @@ export default function CheckInPage() {
     );
   }
 
-  // Already Checked In (Minimalist Thai + Profile Card with Edit Button)
+  // Already Checked In (Minimalist Thai)
   if (errorType === 'already_checked_in') {
     return (
       <div className="min-h-screen bg-white flex flex-col">
         {renderHeader()}
 
-        <div className="px-6 pt-12 sm:pt-16 flex-1 flex flex-col items-center text-center">
-          <div className="mb-6">
-            <div className="w-16 h-16 rounded-full border-4 border-black flex items-center justify-center mx-auto">
+        <div className="px-6 pt-20 flex-1">
+          <div className="mb-8">
+            <div className="w-16 h-16 rounded-full border-4 border-black flex items-center justify-center">
               <svg
                 className="w-8 h-8 text-black"
                 fill="none"
@@ -814,47 +792,29 @@ export default function CheckInPage() {
             </div>
           </div>
 
-          <h2 className="text-3xl font-bold text-black mb-2">
+          <h2 className="text-3xl font-bold text-black mb-4">
             คุณได้เช็คชื่อวิชานี้เรียบร้อยแล้ว
           </h2>
 
-          <p className="text-base text-gray-600 mb-6">
-            ในวิชา <span className="font-bold text-black">{roomName || 'ห้องเรียน'}</span>
-          </p>
-
-          {/* Explicit Pass Profile Card with Edit Button */}
           {profile && (
-            <div className="w-full max-w-md bg-gray-50 border border-gray-200 rounded-2xl p-5 mb-6 text-left shadow-xs">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                  บัตรนิสิตประจำตัวคุณ
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowPassCard(true)}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                  แก้ไขข้อมูลบัตร
-                </button>
-              </div>
-
-              <div className="text-lg font-bold text-black leading-tight">
-                {profile.first_name} {profile.last_name}
-              </div>
-
-              <div className="text-xs text-gray-600 font-mono mt-1.5 flex items-center gap-3">
-                <span>รหัส: {profile.student_id}</span>
-                <span>•</span>
-                <span>ชั้นปีที่ {profile.year_level}</span>
-              </div>
+            <div className="mb-8">
+              <p className="text-base text-gray-600 mb-1">
+                <span className="font-semibold text-black">{profile.first_name} {profile.last_name}</span> ({profile.student_id})
+              </p>
+              {roomName && (
+                <>
+                  <p className="text-base text-gray-600 mb-2">
+                    ในวิชา
+                  </p>
+                  <h3 className="text-3xl font-bold text-black leading-tight">
+                    {roomName}
+                  </h3>
+                </>
+              )}
             </div>
           )}
 
-          <p className="text-sm text-gray-400">
+          <p className="text-base text-gray-600">
             คุณสามารถปิดหน้าต่างนี้ได้เลย
           </p>
         </div>
@@ -1221,19 +1181,10 @@ export default function CheckInPage() {
                 </div>
 
                 <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-2xl font-semibold text-black leading-tight">
-                      {profile.first_name} {profile.last_name}
-                    </h2>
-                    <button
-                      type="button"
-                      onClick={() => setShowPassCard(true)}
-                      className="text-xs text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer active:scale-95 transition-all"
-                    >
-                      แก้ไขบัตร
-                    </button>
-                  </div>
-                  <p className="text-gray-600 text-sm mt-0.5 font-mono">
+                  <h2 className="text-2xl font-semibold text-black leading-tight">
+                    {profile.first_name} {profile.last_name}
+                  </h2>
+                  <p className="text-gray-600 text-sm mt-0.5">
                     {profile.student_id}
                   </p>
                 </div>
