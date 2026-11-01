@@ -15,7 +15,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase, ActiveRoom, Attendance, KURosterStudent } from '@/utils/supabase';
+import { supabase, ActiveRoom, Attendance, KURosterStudent, StudentListJson } from '@/utils/supabase';
 import { downloadUpdatedXlsx, parseSpreadsheetBuffer } from '@/utils/xlsx-helper';
 import { authenticator } from 'otplib';
 import { QRCodeSVG } from 'qrcode.react';
@@ -95,8 +95,27 @@ export default function RoomPage() {
 
   const extraStudents = useMemo(() => {
     if (rosterStudents.length === 0) return [];
-    const rosterSet = new Set(rosterStudents.map((s) => s.student_id.trim()));
-    return attendanceList.filter((a) => !rosterSet.has(a.student_id.trim()));
+    const extrasInRoster = rosterStudents.filter((s) => s.status === 'Extra');
+    const rosterIdSet = new Set(rosterStudents.map((s) => s.student_id.trim()));
+    const unlistedCheckedIn = attendanceList.filter((a) => !rosterIdSet.has(a.student_id.trim()));
+
+    const combinedMap = new Map<string, { student_id: string; first_name: string; last_name: string; checkin_time?: string }>();
+    for (const s of extrasInRoster) {
+      combinedMap.set(s.student_id.trim(), {
+        student_id: s.student_id.trim(),
+        first_name: s.first_name,
+        last_name: s.last_name,
+      });
+    }
+    for (const a of unlistedCheckedIn) {
+      combinedMap.set(a.student_id.trim(), {
+        student_id: a.student_id.trim(),
+        first_name: a.first_name,
+        last_name: a.last_name,
+        checkin_time: a.checkin_time,
+      });
+    }
+    return Array.from(combinedMap.values());
   }, [rosterStudents, attendanceList]);
 
   // Accurate counts derived directly from state
@@ -565,6 +584,37 @@ export default function RoomPage() {
   };
 
   /**
+   * Persist updated roster students across LocalStorage, Supabase active_rooms, and runtime memory
+   */
+  const persistUpdatedRoster = async (newRosterStudents: KURosterStudent[]) => {
+    if (!room) return;
+    const updatedJson: StudentListJson = {
+      ...(room.student_list_json || {}),
+      roster_students: newRosterStudents,
+    };
+
+    setRoom((prev) => (prev ? { ...prev, student_list_json: updatedJson } : null));
+
+    try {
+      localStorage.setItem(`attndee_room_roster_${roomId}`, JSON.stringify(updatedJson));
+    } catch {}
+
+    fetch('/api/checkin', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room_id: roomId,
+        roster_students: newRosterStudents,
+      }),
+    }).catch(() => {});
+
+    await supabase
+      .from('active_rooms')
+      .update({ student_list_json: updatedJson })
+      .eq('id', roomId);
+  };
+
+  /**
    * Quick Score Action (0, 0.5, 1.0) for any student
    */
   const handleSetStudentScore = async (
@@ -580,6 +630,25 @@ export default function RoomPage() {
     setUpdatingStudentId(cleanId);
 
     try {
+      // If room has an Excel roster, make sure any added/managed student is enrolled in rosterStudents
+      if (rosterStudents.length > 0) {
+        const isAlreadyInRoster = rosterStudents.some(
+          (s) => s.student_id.trim() === cleanId
+        );
+        if (!isAlreadyInRoster) {
+          const newRosterStudent: KURosterStudent = {
+            row_index: rosterStudents.length + 1,
+            student_id: cleanId,
+            name_th: `${student.first_name} ${student.last_name}`.trim(),
+            first_name: student.first_name || cleanId,
+            last_name: student.last_name || '-',
+            status: 'Extra',
+          };
+          const updatedRoster = [...rosterStudents, newRosterStudent];
+          await persistUpdatedRoster(updatedRoster);
+        }
+      }
+
       if (score === 0) {
         // Remove attendance if checked in
         updateHalfScore(cleanId, false);
@@ -1287,9 +1356,16 @@ export default function RoomPage() {
                       className="bg-white rounded-2xl px-6 py-4 flex items-center justify-between gap-4 border border-gray-100 shadow-2xs"
                     >
                       <div className="min-w-0">
-                        <p className="font-bold text-black text-base sm:text-lg truncate">
-                          {student.display_name}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-black text-base sm:text-lg truncate">
+                            {student.display_name}
+                          </p>
+                          {rosterStudents.find((s) => s.student_id.trim() === student.student_id.trim())?.status === 'Extra' && (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded-md flex-shrink-0">
+                              นอกรายชื่อ
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs sm:text-sm text-gray-500 font-mono">
                           {student.student_id}
                         </p>
@@ -1390,9 +1466,16 @@ export default function RoomPage() {
                             {attendanceList.length - idx}
                           </span>
                           <div className="min-w-0">
-                            <p className="font-bold text-black text-base sm:text-lg truncate">
-                              {fullName}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-black text-base sm:text-lg truncate">
+                                {fullName}
+                              </p>
+                              {(rosterMatch?.status === 'Extra' || (!rosterMatch && rosterStudents.length > 0)) && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded-md flex-shrink-0">
+                                  นอกรายชื่อ
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-500 font-mono">
                               <span>{attendance.student_id}</span>
                               <span>•</span>
@@ -1431,9 +1514,16 @@ export default function RoomPage() {
                     className="bg-white rounded-2xl px-6 py-4 flex items-center justify-between gap-4 border border-gray-100 shadow-2xs"
                   >
                     <div className="min-w-0">
-                      <p className="font-bold text-black text-base sm:text-lg truncate">
-                        {student.name_th || `${student.first_name} ${student.last_name}`}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-black text-base sm:text-lg truncate">
+                          {student.name_th || `${student.first_name} ${student.last_name}`}
+                        </p>
+                        {student.status === 'Extra' && (
+                          <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded-md flex-shrink-0">
+                            นอกรายชื่อ
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs sm:text-sm text-gray-500 font-mono">
                         {student.student_id}
                       </p>

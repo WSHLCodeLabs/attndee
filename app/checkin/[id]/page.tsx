@@ -58,6 +58,7 @@ export default function CheckInPage() {
   const [roomName, setRoomName] = useState<string>('');
   const [isRoomClosed, setIsRoomClosed] = useState(false);
   const [deviceBlockedMsg, setDeviceBlockedMsg] = useState<string | null>(null);
+  const [notInRosterMsg, setNotInRosterMsg] = useState<string | null>(null);
   const [distanceError, setDistanceError] = useState<{ distance: number; allowedRadius: number } | null>(null);
 
   const isSubmitting = useRef(false);
@@ -212,6 +213,7 @@ export default function CheckInPage() {
     setProfile(newProfile);
     profileRef.current = newProfile;
     setShowPassCard(false);
+    setNotInRosterMsg(null);
 
     if (status === 'success' || errorType === 'already_checked_in') {
       return;
@@ -341,6 +343,13 @@ export default function CheckInPage() {
         markDeviceCheckedInRoom(roomId, studentProfile.student_id);
         setStatus('success');
         setMessage(data.message || 'เช็คชื่อสำเร็จแล้ว!');
+        isSubmitting.current = false;
+        return;
+      }
+
+      if (response.status === 403 && data.code === 'NOT_IN_ROSTER') {
+        setNotInRosterMsg(data.error || 'รหัสนิสิตของคุณไม่ได้อยู่ในรายชื่อของวิชานี้');
+        setStatus('idle');
         isSubmitting.current = false;
         return;
       }
@@ -526,6 +535,61 @@ export default function CheckInPage() {
           <p className="text-base text-gray-600 leading-relaxed mb-8">
             {deviceBlockedMsg}
           </p>
+        </div>
+
+        <div className="px-6 py-6 mt-auto text-center">
+          <p className="text-xs text-gray-400">รหัสห้องเรียน: {roomId}</p>
+        </div>
+
+        {showPassCard && (
+          <PassCard
+            onPassCreated={handlePassCreated}
+            onDismiss={profile ? () => setShowPassCard(false) : undefined}
+            initialProfile={profile}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Not in Roster Screen (Strict Roster Lock)
+  if (notInRosterMsg) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        {renderHeader()}
+
+        <div className="px-6 pt-20 flex-1">
+          <div className="mb-8">
+            <div className="w-16 h-16 rounded-full border-4 border-black flex items-center justify-center">
+              <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
+
+          <h2 className="text-3xl font-bold text-black mb-4">
+            ไม่พบรหัสในรายชื่อวิชา
+          </h2>
+
+          <div className="mb-8">
+            <p className="text-base text-red-600 mb-2">
+              {notInRosterMsg}
+            </p>
+            <p className="text-sm text-gray-500">
+              หากกรอกรหัสนิสิตผิด สามารถกดปุ่มด้านล่างเพื่อแก้ไขข้อมูลบัตร หรือติดต่ออาจารย์ผู้สอนเพื่อเพิ่มชื่อเข้าชั้นเรียน
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setNotInRosterMsg(null);
+              setShowPassCard(true);
+            }}
+            className="w-full max-w-md py-4 bg-black text-white text-base font-semibold rounded-full hover:bg-gray-800 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+          >
+            <span>แก้ไขข้อมูลบัตรนิสิต</span>
+          </button>
         </div>
 
         <div className="px-6 py-6 mt-auto text-center">

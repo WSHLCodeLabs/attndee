@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
     if (!room) {
       const { data: dbRoom, error: roomError } = await supabase
         .from('active_rooms')
-        .select('id, created_at, secret_key, teacher_lat, teacher_long, checkin_duration_mins, room_name')
+        .select('id, created_at, secret_key, teacher_lat, teacher_long, checkin_duration_mins, room_name, student_list_json')
         .eq('id', room_id)
         .single();
 
@@ -173,6 +173,15 @@ export async function POST(request: NextRequest) {
         room_name: dbRoom.room_name,
       };
       mem.room_meta = room;
+
+      if ((!mem.roster_students || mem.roster_students.length === 0) && Array.isArray(dbRoom.student_list_json?.roster_students)) {
+        mem.roster_students = dbRoom.student_list_json.roster_students;
+        for (const s of mem.roster_students) {
+          if (s.student_id && s.device_fingerprint && s.device_fingerprint !== 'unknown') {
+            mem.student_fingerprints[String(s.student_id).trim()] = s.device_fingerprint;
+          }
+        }
+      }
     }
 
     // VALIDATION 1: Session Status & Expiry (Instant memory check)
@@ -246,8 +255,46 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // VALIDATION 4: Duplicate Student ID Check (Instant in-memory Set check first)
     const cleanStudentId = String(student_id).trim();
+
+    // VALIDATION 3.5: Strict Roster Lock (When room has an uploaded .xlsx roster)
+    if (!is_manual_override) {
+      if (!mem.roster_students || mem.roster_students.length === 0) {
+        const { data: rosterCheck } = await supabase
+          .from('active_rooms')
+          .select('student_list_json')
+          .eq('id', room_id)
+          .single();
+
+        if (Array.isArray(rosterCheck?.student_list_json?.roster_students) && rosterCheck.student_list_json.roster_students.length > 0) {
+          mem.roster_students = rosterCheck.student_list_json.roster_students;
+          for (const s of mem.roster_students) {
+            if (s.student_id && s.device_fingerprint && s.device_fingerprint !== 'unknown') {
+              mem.student_fingerprints[String(s.student_id).trim()] = s.device_fingerprint;
+            }
+          }
+        }
+      }
+
+      if (mem.roster_students && mem.roster_students.length > 0) {
+        const isEnrolled = mem.roster_students.some(
+          (s) => String(s.student_id).trim() === cleanStudentId
+        );
+
+        if (!isEnrolled) {
+          return NextResponse.json(
+            {
+              error: `รหัสนิสิต ${cleanStudentId} ไม่ได้อยู่ในรายชื่อของวิชานี้ (หากเป็นนิสิตในชั้นเรียน กรุณาแจ้งอาจารย์ผู้สอน)`,
+              code: 'NOT_IN_ROSTER',
+              student_id: cleanStudentId,
+            },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    // VALIDATION 4: Duplicate Student ID Check (Instant in-memory Set check first)
     if (mem.checked_in_student_ids.has(cleanStudentId)) {
       return NextResponse.json(
         { error: 'You have already checked in to this room' },

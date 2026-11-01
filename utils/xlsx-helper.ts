@@ -896,7 +896,11 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
         }
 
         const isLate = lateSet.has(cleanExtraId);
-        newRow[appendColIndex] = isLate && lateScore !== undefined ? Number(lateScore) : 1;
+        if (checkedInSet.has(cleanExtraId)) {
+          newRow[appendColIndex] = isLate && lateScore !== undefined ? Number(lateScore) : 1;
+        } else {
+          newRow[appendColIndex] = 0;
+        }
 
         // Persist fingerprint for extra student
         const extraFp = options.studentFingerprints?.[cleanExtraId];

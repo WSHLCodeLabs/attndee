@@ -171,3 +171,22 @@ During the architectural audit and pre-production refactoring passes, several cr
 - **What remains**:
   - Ready for final deployment to Vercel.
 
+### [2026-11-01] Strict Roster Lock & Extra Student Zero-Score Persistence
+- **What was done**:
+  1. **Strict Roster Lock in Check-in API**:
+     - Updated `app/api/checkin/route.ts` with Validation 3.5: when a room is backed by an uploaded myKU `.xlsx` roster (`roster_students.length > 0`), check-in is restricted exclusively to enrolled student IDs.
+     - Unlisted student IDs attempting to check in are rejected with status 403 and code `NOT_IN_ROSTER`.
+     - Added automatic fallback to load `student_list_json` from Supabase on cold starts.
+  2. **Dedicated Not-in-Roster Screen for Students**:
+     - Added minimalist Thai rejection screen in `app/checkin/[id]/page.tsx` with a direct "แก้ไขข้อมูลบัตรนิสิต" button, allowing students with typos to correct their student ID and retry immediately.
+  3. **Zero-Score Persistence for Unlisted / Extra Students**:
+     - Updated `app/room/[id]/page.tsx` so that when an instructor manually adds a student outside the original Excel roster, the student is dynamically enrolled into `roster_students` (marked with `status: 'Extra'`).
+     - Added `persistUpdatedRoster` helper syncing additions across React state, `localStorage`, `PUT /api/checkin`, and Supabase `active_rooms`.
+     - When an unlisted/extra student's score is toggled to `0`, they now remain in `roster_students` and move naturally into the "ยังไม่เช็คชื่อ" (absent) tab with a clean `[นอกรายชื่อ]` badge instead of vanishing from the system.
+  4. **Excel Export Compatibility**:
+     - Updated `utils/xlsx-helper.ts` to assign numeric `0` (rather than defaulting to 1) for extra students who are absent / scored 0.
+- **Key decisions made**:
+  - Implemented Approach 1 (Strict Roster Lock) per user decision, closing the attendance spoofing loophole from students outside the class.
+  - Ensured manual override and ad-hoc rooms without Excel files remain fully functional.
+
+
