@@ -20,6 +20,7 @@ import {
   downloadUpdatedXlsx,
   generateUpdatedXlsxBlob,
   parseSpreadsheetBuffer,
+  buildStandardInitialRosterGrid,
   ExportXlsxOptions,
 } from '@/utils/xlsx-helper';
 import { upsertTeacherCloudFile } from '@/utils/cloud-storage';
@@ -812,8 +813,55 @@ export default function RoomPage() {
   };
 
   const buildRoomExportOptions = async (overrideBase64?: string): Promise<ExportXlsxOptions | null> => {
-    if (!room?.student_list_json?.xlsx_data) return null;
+    if (!room) return null;
 
+    const lateSet = new Set(Object.keys(halfScoreIds).filter((id) => halfScoreIds[id]));
+
+    // Case 1: Room was created from scratch (Guest / New Class without an uploaded .xlsx file)
+    if (!room.student_list_json?.xlsx_data) {
+      const studentMap = new Map<
+        string,
+        { student_id: string; first_name: string; last_name: string }
+      >();
+      for (const s of rosterStudents) {
+        const cleanId = s.student_id.trim();
+        if (cleanId) {
+          studentMap.set(cleanId, {
+            student_id: cleanId,
+            first_name: s.first_name || cleanId,
+            last_name: s.last_name || '',
+          });
+        }
+      }
+      for (const a of attendanceList) {
+        const cleanId = a.student_id.trim();
+        if (cleanId && !studentMap.has(cleanId)) {
+          studentMap.set(cleanId, {
+            student_id: cleanId,
+            first_name: a.first_name || cleanId,
+            last_name: a.last_name || '',
+          });
+        }
+      }
+
+      const initialStandard = buildStandardInitialRosterGrid(
+        room.room_name,
+        Array.from(studentMap.values())
+      );
+
+      return {
+        xlsxData: initialStandard.rawGrid,
+        courseMeta: initialStandard.courseMeta,
+        idColumn: initialStandard.idColumn,
+        checkedInIds: checkedInIdSet,
+        lateIds: lateSet,
+        lateScore: 0.5,
+        filename: `${room.room_name.replace(/\s+/g, '_')}.xlsx`,
+        dateLabel: new Date().toLocaleDateString('th-TH'),
+      };
+    }
+
+    // Case 2: Room was created from an uploaded .xlsx file
     const { xlsx_data, xlsx_base64, id_column, filename, course_meta } = room.student_list_json;
 
     // Resolve the original .xlsx binary so KU logo, TH SarabunPSK fonts, borders, and B2 layout are 100% preserved
@@ -823,27 +871,6 @@ export default function RoomPage() {
         resolvedBase64 = localStorage.getItem('attndee_latest_xlsx_base64') || undefined;
       } catch {}
     }
-
-    let latestFingerprints: Record<string, string> = {};
-    for (const s of rosterStudents) {
-      if (s.student_id && s.device_fingerprint && s.device_fingerprint !== 'unknown') {
-        latestFingerprints[s.student_id.trim()] = s.device_fingerprint;
-      }
-    }
-    try {
-      const res = await fetch(`/api/checkin?room_id=${encodeURIComponent(roomId)}`);
-      if (res.ok) {
-        const runtimeData = await res.json();
-        if (runtimeData.student_fingerprints) {
-          latestFingerprints = {
-            ...latestFingerprints,
-            ...runtimeData.student_fingerprints,
-          };
-        }
-      }
-    } catch {}
-
-    const lateSet = new Set(Object.keys(halfScoreIds).filter((id) => halfScoreIds[id]));
 
     return {
       xlsxData: xlsx_data,
@@ -859,28 +886,29 @@ export default function RoomPage() {
         last_name: s.last_name,
         checkin_time: s.checkin_time,
       })),
-      studentFingerprints: latestFingerprints,
       filename: filename || `${room.room_name}_checked.xlsx`,
       dateLabel: new Date().toLocaleDateString('th-TH'),
     };
   };
 
   const handleExportXLSX = async (overrideBase64?: string) => {
-    if (!room?.student_list_json?.xlsx_data) {
-      handleExportCSV();
-      return;
-    }
-
     const exportOptions = await buildRoomExportOptions(overrideBase64);
     if (!exportOptions) return;
 
-    // If this room was created before the binary-preserving update, prompt the user once to pick their original .xlsx template
-    if (!exportOptions.xlsxBase64 && templateFileInputRef.current) {
+    // If this room had an uploaded .xlsx file before the binary-preserving update, prompt once for original template
+    if (
+      room?.student_list_json?.xlsx_data &&
+      !exportOptions.xlsxBase64 &&
+      templateFileInputRef.current
+    ) {
       templateFileInputRef.current.click();
       return;
     }
 
-    downloadUpdatedXlsx(exportOptions);
+    downloadUpdatedXlsx({
+      ...exportOptions,
+      includeSummaryColumn: true,
+    });
   };
 
   const handleTemplateFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -926,22 +954,34 @@ export default function RoomPage() {
 
     setIsExiting(true);
     try {
-      // If teacher is logged in and this room has an Excel roster, automatically overwrite the file in Supabase Cloud Storage
-      if (room?.student_list_json?.xlsx_data) {
+      // If teacher is logged in and this room has an Excel roster OR checked-in students, automatically save .xlsx to Supabase Cloud Storage
+      const hasAnyStudents =
+        Boolean(room?.student_list_json?.xlsx_data) ||
+        rosterStudents.length > 0 ||
+        attendanceList.length > 0;
+      if (room && hasAnyStudents) {
         const {
           data: { session },
         } = await supabase.auth.getSession();
         if (session?.user) {
           const exportOptions = await buildRoomExportOptions();
           if (exportOptions) {
-            const updatedBlob = generateUpdatedXlsxBlob(exportOptions);
+            const updatedBlob = generateUpdatedXlsxBlob({
+              ...exportOptions,
+              includeSummaryColumn: false,
+            });
             const targetFilename =
-              room.student_list_json.filename || `${room.room_name}.xlsx`;
+              room.student_list_json?.filename ||
+              `${room.room_name.replace(/\s+/g, '_')}.xlsx`;
+            const totalStudentCount = Math.max(
+              rosterStudents.length,
+              attendanceList.length
+            );
             await upsertTeacherCloudFile({
               fileBlob: updatedBlob,
               filename: targetFilename,
               courseName: room.room_name,
-              studentCount: rosterStudents.length,
+              studentCount: totalStudentCount,
             });
           }
         }
@@ -1222,25 +1262,19 @@ export default function RoomPage() {
                 </button>
               ) : (
                 <>
-                  {room?.student_list_json?.xlsx_data ? (
-                    <button
-                      type="button"
-                      onClick={() => handleExportXLSX()}
-                      className="px-6 py-3 bg-[#0051fc] hover:bg-blue-700 text-white text-sm sm:text-base font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs hover:scale-102 active:scale-98"
-                    >
-                      <Download size={18} />
-                      <span>Export XLSX</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleExportCSV}
-                      disabled={attendanceList.length === 0}
-                      className="px-6 py-3 bg-[#0051fc] hover:bg-blue-700 text-white text-sm sm:text-base font-bold rounded-xl transition-all disabled:bg-gray-200 disabled:text-gray-400 cursor-pointer shadow-xs"
-                    >
-                      Download CSV
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleExportXLSX()}
+                    disabled={
+                      !room?.student_list_json?.xlsx_data &&
+                      rosterStudents.length === 0 &&
+                      attendanceList.length === 0
+                    }
+                    className="px-6 py-3 bg-[#0051fc] hover:bg-blue-700 text-white text-sm sm:text-base font-bold rounded-xl transition-all flex items-center gap-2 disabled:bg-gray-200 disabled:text-gray-400 cursor-pointer shadow-xs hover:scale-102 active:scale-98"
+                  >
+                    <Download size={18} />
+                    <span>Export XLSX</span>
+                  </button>
 
                   <button
                     type="button"

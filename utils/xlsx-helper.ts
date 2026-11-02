@@ -1316,15 +1316,88 @@ export function buildPatchedXlsxBuffer(
 }
 
 /**
- * Generate the updated XLSX workbook as a Blob (preserving binary KU layout when base64 is available)
+ * Build a standard KU/Attndee 0-based initial spreadsheet grid for rooms created
+ * from scratch (Guest or without an uploaded .xlsx file).
+ * Uses the exact same B..K column layout (header at row index 6 = Excel Row 7)
+ * so that exported .xlsx files can be re-uploaded or saved to Cloud for future sessions!
+ */
+export function buildStandardInitialRosterGrid(
+  roomName: string,
+  students: Array<{ student_id: string; first_name: string; last_name: string }>
+): { rawGrid: any[][]; courseMeta: CourseMetadata; idColumn: string } {
+  const sortedStudents = [...students].sort((a, b) =>
+    String(a.student_id).localeCompare(String(b.student_id), undefined, { numeric: true })
+  );
+
+  const rawGrid: any[][] = [
+    [], // Row 1 (0)
+    ['', 'รายงานแสดงจำนวนนิสิต จำแนกตามหมู่เรียน'], // Row 2 (1)
+    ['', 'มหาวิทยาลัยเกษตรศาสตร์'], // Row 3 (2)
+    ['', 'ชื่อวิชา', roomName || 'ห้องเช็คชื่อ'], // Row 4 (3)
+    [], // Row 5 (4)
+    ['', 'รายชื่อนิสิต', '', `สรุปทั้งหมด ${sortedStudents.length} คน`], // Row 6 (5)
+    [
+      '',
+      'ลำดับที่',
+      'รหัสนิสิต',
+      'ชื่อ-นามสกุล',
+      'ชื่อ-นามสกุล',
+      'คณะ/หน่วยงานที่เทียบเท่า',
+      'สาขาวิชา',
+      'รหัสสาขา',
+      'สถานะ',
+      'Email Google',
+      'Email Office365',
+    ], // Row 7 (6) - Standard Header Row
+  ];
+
+  sortedStudents.forEach((s, idx) => {
+    const cleanId = String(s.student_id ?? '').trim();
+    const fullName = `${s.first_name || ''} ${s.last_name || ''}`
+      .replace(/\s-\s*$/, '')
+      .trim();
+    rawGrid.push([
+      '',
+      idx + 1,
+      cleanId,
+      fullName,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+  });
+
+  rawGrid.push([]);
+  rawGrid.push(['', `วันเวลาที่พิมพ์รายงาน ${new Date().toLocaleString('th-TH')}`]);
+
+  const courseMeta: CourseMetadata = {
+    is_ku_format: true,
+    course_name: roomName,
+    full_title: roomName,
+    header_row_index: 6,
+    id_col_index: 2,
+    name_th_col_index: 3,
+    name_en_col_index: 4,
+    status_col_index: 8,
+  };
+
+  return {
+    rawGrid,
+    courseMeta,
+    idColumn: 'C',
+  };
+}
+
+/**
+ * Generate the updated XLSX workbook as a Blob (preserving binary KU layout when base64 is available,
+ * or generating a styled TH SarabunPSK + bordered standard KU workbook when created from scratch)
  */
 export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
-  let base64Source = options.xlsxBase64;
-  if (!base64Source && typeof window !== 'undefined') {
-    try {
-      base64Source = localStorage.getItem('attndee_latest_xlsx_base64') || undefined;
-    } catch {}
-  }
+  const base64Source = options.xlsxBase64;
 
   // 1. If original .xlsx binary (base64Source) is available, patch the ZIP XML in-place
   // so the KU logo, TH SarabunPSK fonts, borders, merged cells, and layout remain 100% intact!
@@ -1337,7 +1410,7 @@ export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
     }
   }
 
-  // 2. Fallback for generic spreadsheets when no binary is available
+  // 2. Standard KU/Attndee styled .xlsx generator when created from scratch (Guest / New Class)
   let grid = buildUpdatedXlsxGrid(options);
   if (
     grid.length > 0 &&
@@ -1355,22 +1428,164 @@ export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
     { wch: 8 },
     { wch: 14 },
     { wch: 26 },
-    { wch: 26 },
-    { wch: 26 },
-    { wch: 22 },
-    { wch: 12 },
+    { wch: 24 },
+    { wch: 24 },
+    { wch: 20 },
     { wch: 10 },
-    { wch: 24 },
-    { wch: 24 },
+    { wch: 10 },
+    { wch: 22 },
+    { wch: 22 },
     { wch: 14 },
-  ];
-  worksheet['!merges'] = [
-    { s: { r: 1, c: 1 }, e: { r: 1, c: 6 } },
-    { s: { r: 2, c: 1 }, e: { r: 2, c: 6 } },
+    { wch: 14 },
+    { wch: 14 },
   ];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet 1');
   const outBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+
+  // Inject TH SarabunPSK font and clean table borders into the generated OOXML zip
+  try {
+    const cfbLib = (XLSX as any).CFB;
+    if (cfbLib) {
+      const cfb = cfbLib.read(new Uint8Array(outBuffer), { type: 'array' });
+      const stylesEntry =
+        cfbLib.find(cfb, '/xl/styles.xml') || cfbLib.find(cfb, 'xl/styles.xml');
+      const sheetEntry =
+        cfbLib.find(cfb, '/xl/worksheets/sheet1.xml') ||
+        cfbLib.find(cfb, 'xl/worksheets/sheet1.xml');
+
+      if (stylesEntry && sheetEntry && sheetEntry.content) {
+        const customStylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="3">
+    <font><sz val="14"/><name val="TH SarabunPSK"/></font>
+    <font><b/><sz val="14"/><name val="TH SarabunPSK"/></font>
+    <font><b/><sz val="16"/><name val="TH SarabunPSK"/></font>
+  </fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color auto="1"/></left>
+      <right style="thin"><color auto="1"/></right>
+      <top style="thin"><color auto="1"/></top>
+      <bottom style="thin"><color auto="1"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="5">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
+    </xf>
+  </cellXfs>
+</styleSheet>`;
+
+        let sheetXml: string =
+          typeof Buffer !== 'undefined' && Buffer.isBuffer(sheetEntry.content)
+            ? sheetEntry.content.toString('utf8')
+            : new TextDecoder('utf-8').decode(
+                sheetEntry.content instanceof Uint8Array
+                  ? sheetEntry.content
+                  : new Uint8Array(sheetEntry.content)
+              );
+
+        const headerRowIdx = options.courseMeta?.header_row_index ?? 6;
+        const headerExcelRow = headerRowIdx + 1;
+        const maxTableColIdx = Math.max(
+          (grid[headerRowIdx]?.length ?? 12) - 1,
+          10
+        );
+
+        // Style title rows (rows 2..6) with bold TH SarabunPSK (s="1")
+        for (let r = 2; r < headerExcelRow; r++) {
+          const rRegex = new RegExp(`<row\\s+r="${r}"[^>]*>[\\s\\S]*?<\\/row>`);
+          sheetXml = sheetXml.replace(rRegex, (rowBlock) =>
+            rowBlock.replace(/<c\s+r="([A-Z]+\d+)"/g, '<c r="$1" s="1"')
+          );
+        }
+
+        // Style table header row (Excel Row 7) with bordered bold center style (s="2")
+        const hRegex = new RegExp(`<row\\s+r="${headerExcelRow}"[^>]*>[\\s\\S]*?<\\/row>`);
+        sheetXml = sheetXml.replace(hRegex, (rowBlock) =>
+          rowBlock.replace(/<c\s+r="([A-Z]+\d+)"/g, '<c r="$1" s="2"')
+        );
+
+        // Style student rows (Excel Row 8+ before footer) with bordered cells (s="4" center or s="3" left for names)
+        for (let r0 = headerRowIdx + 1; r0 < grid.length; r0++) {
+          const rStr = (grid[r0] || []).map((c) => String(c ?? '')).join(' ');
+          if (rStr.includes('วันเวลาที่พิมพ์รายงาน') || !String(grid[r0]?.[2] ?? '').trim()) {
+            continue;
+          }
+          const excelR = r0 + 1;
+          const sRegex = new RegExp(`<row\\s+r="${excelR}"[^>]*>[\\s\\S]*?<\\/row>`);
+          sheetXml = sheetXml.replace(sRegex, (rowBlock) => {
+            let updatedBlock = rowBlock;
+            for (let c0 = 1; c0 <= maxTableColIdx; c0++) {
+              const colLet = getColumnLetter(c0);
+              const ref = `${colLet}${excelR}`;
+              const styleId = c0 === 3 || c0 === 4 || c0 === 5 || c0 === 6 || c0 === 9 || c0 === 10 ? '3' : '4';
+              const cRegex = new RegExp(`<c\\s+r="${ref}"([^/>]*)(/>|>[\\s\\S]*?<\\/c>)`);
+              if (cRegex.test(updatedBlock)) {
+                updatedBlock = updatedBlock.replace(cRegex, `<c r="${ref}" s="${styleId}"$1$2`);
+              } else {
+                updatedBlock = updatedBlock.replace('</row>', `<c r="${ref}" s="${styleId}"/></row>`);
+              }
+            }
+            // Sort cells in ascending column order
+            return updatedBlock.replace(
+              /^(<row\b[^>]*>)([\s\S]*?)(<\/row>)$/,
+              (_f, oTag, inner, cTag) => {
+                const cellRx = /<c\b[^/>]*\br="([A-Z]+)\d+"[^/>]*(?:\/>|>[\s\S]*?<\/c>)/g;
+                const cells: { colIdx: number; xml: string }[] = [];
+                let m: RegExpExecArray | null;
+                while ((m = cellRx.exec(inner)) !== null) {
+                  cells.push({ colIdx: getColumnIndex(m[1]), xml: m[0] });
+                }
+                cells.sort((a, b) => a.colIdx - b.colIdx);
+                return `${oTag}${cells.map((c) => c.xml).join('')}${cTag}`;
+              }
+            );
+          });
+        }
+
+        const encStyles =
+          typeof Buffer !== 'undefined'
+            ? Buffer.from(customStylesXml, 'utf8')
+            : new TextEncoder().encode(customStylesXml);
+        stylesEntry.content = encStyles;
+        stylesEntry.size = encStyles.length;
+
+        const encSheet =
+          typeof Buffer !== 'undefined'
+            ? Buffer.from(sheetXml, 'utf8')
+            : new TextEncoder().encode(sheetXml);
+        sheetEntry.content = encSheet;
+        sheetEntry.size = encSheet.length;
+
+        const styledOut = cfbLib.write(cfb, { type: 'array', fileType: 'zip' });
+        return new Blob([styledOut as unknown as BlobPart], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Custom XLSX style injection fallback:', err);
+  }
+
   return new Blob([outBuffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
