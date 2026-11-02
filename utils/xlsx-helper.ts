@@ -1065,7 +1065,12 @@ export function buildPatchedXlsxBuffer(
 
         const cellRef = `${getColumnLetter(c0)}${excelRowNum}`;
         const existingCellRegex = new RegExp(`<c\\s+r="${cellRef}"[^>]*(?:/>|>[\\s\\S]*?<\\/c>)`);
-        if (!existingCellRegex.test(rowXml) || c0 === fpColIdx) {
+        const existingMatch = rowXml.match(existingCellRegex);
+        // Note: Excel often saves empty formatted cells as self-closing <c r="M7" s="7"/> without <v> or <is>.
+        // Treat any cell without <v> or <is> as empty so attendance scores are always written!
+        const hasExistingValue = Boolean(existingMatch && /<(?:v|is)\b/.test(existingMatch[0]));
+
+        if (!hasExistingValue || c0 === fpColIdx) {
           const cellXml = buildCellXml(r0, c0, val, rowStyle);
           rowXml = upsertCellInRowXml(rowXml, cellRef, cellXml);
         }
@@ -1090,7 +1095,7 @@ export function buildPatchedXlsxBuffer(
     });
 
     // Ensure the attendance column(s) have a clean readable width in <cols> (e.g. width="13.5")
-    // and keep <col> elements strictly sorted by min attribute
+    // without creating overlapping min/max ranges
     if (xml.includes('</cols>')) {
       let lastNonEmptyBeforeFp = idColIdx;
       for (let c = idColIdx; c < fpColIdx; c++) {
@@ -1098,24 +1103,38 @@ export function buildPatchedXlsxBuffer(
         if (cellVal !== '') lastNonEmptyBeforeFp = c;
       }
       const col1Based = lastNonEmptyBeforeFp + 1;
-      const colDef = `<col min="${col1Based}" max="${col1Based}" width="13.5" customWidth="1" />`;
-      if (!xml.includes(`min="${col1Based}"`)) {
-        xml = xml.replace('</cols>', `${colDef}</cols>`);
-      }
       xml = xml.replace(/<cols>([\s\S]*?)<\/cols>/, (_full, innerCols) => {
-        const colRegex = /<col\b[^>]*\bmin="(\d+)"[^>]*\/>/g;
-        const cols: { min: number; xml: string }[] = [];
-        const seenMin = new Set<number>();
+        const colRegex = /<col\b[^>]*\bmin="(\d+)"[^>]*\bmax="(\d+)"[^>]*\/>/g;
+        const parsedCols: { min: number; max: number; xml: string }[] = [];
         let cm: RegExpExecArray | null;
         while ((cm = colRegex.exec(innerCols)) !== null) {
-          const minNum = Number(cm[1]);
-          if (!seenMin.has(minNum)) {
-            seenMin.add(minNum);
-            cols.push({ min: minNum, xml: cm[0] });
-          }
+          parsedCols.push({
+            min: Number(cm[1]),
+            max: Number(cm[2]),
+            xml: cm[0],
+          });
         }
-        cols.sort((a, b) => a.min - b.min);
-        return `<cols>${cols.map((c) => c.xml).join('')}</cols>`;
+        // Remove any redundant single-col entry that is already covered by a wider range
+        const cleanCols = parsedCols.filter(
+          (c, idx) =>
+            !parsedCols.some(
+              (other, oIdx) =>
+                oIdx !== idx &&
+                other.min <= c.min &&
+                c.max <= other.max &&
+                (other.max - other.min > c.max - c.min || oIdx < idx)
+            )
+        );
+        const isCovered = cleanCols.some((c) => c.min <= col1Based && col1Based <= c.max);
+        if (!isCovered) {
+          cleanCols.push({
+            min: col1Based,
+            max: col1Based,
+            xml: `<col min="${col1Based}" max="${col1Based}" width="13.5" customWidth="1" />`,
+          });
+        }
+        cleanCols.sort((a, b) => a.min - b.min);
+        return `<cols>${cleanCols.map((c) => c.xml).join('')}</cols>`;
       });
     }
 
