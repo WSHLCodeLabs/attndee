@@ -77,6 +77,7 @@ export interface StudentListJson {
   id_column?: string;
   checkmark_column?: string;
   filename?: string;
+  cloud_file_id?: string;
   // Enhanced KU Roster & Room Control Metadata
   has_roster?: boolean;
   course_meta?: CourseMetadata;
@@ -88,6 +89,18 @@ export interface StudentListJson {
   late_student_ids?: string[]; // Optional list of student_ids marked as late
 }
 
+export interface TeacherCloudFile {
+  id: string;
+  teacher_id: string;
+  filename: string;
+  storage_path: string;
+  course_name?: string | null;
+  student_count: number;
+  file_size: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ActiveRoom {
   id: string;
   created_at: string;
@@ -96,6 +109,7 @@ export interface ActiveRoom {
   teacher_long: number;
   checkin_duration_mins: number;
   room_name: string; // Attndee rebrand: Room/class name
+  teacher_id?: string | null;
   student_list_json?: StudentListJson | null;
 }
 

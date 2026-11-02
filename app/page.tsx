@@ -8,13 +8,30 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { MapPin, X } from 'lucide-react';
-import { supabase } from '@/utils/supabase';
+import {
+  MapPin,
+  X,
+  Cloud,
+  FileSpreadsheet,
+  Trash2,
+  Upload,
+  LogOut,
+  CheckCircle2,
+  Loader2,
+} from 'lucide-react';
+import { supabase, TeacherCloudFile } from '@/utils/supabase';
 import {
   parseSpreadsheetBuffer,
   parseRosterGrid,
   ParsedRosterResult,
 } from '@/utils/xlsx-helper';
+import {
+  listTeacherCloudFiles,
+  upsertTeacherCloudFile,
+  downloadTeacherCloudFile,
+  deleteTeacherCloudFile,
+} from '@/utils/cloud-storage';
+import TeacherAuthModal from '@/components/TeacherAuthModal';
 
 // Dynamic imports for react-leaflet (SSR-safe)
 const MapContainer = dynamic(
@@ -61,11 +78,60 @@ export default function HomePage() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Teacher Auth & Cloud Backup state
+  const [teacherUser, setTeacherUser] = useState<{ id: string; email?: string } | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [cloudFiles, setCloudFiles] = useState<TeacherCloudFile[]>([]);
+  const [isLoadingCloud, setIsLoadingCloud] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [loadingCloudFileId, setLoadingCloudFileId] = useState<string | null>(null);
+  const [deletingCloudFileId, setDeletingCloudFileId] = useState<string | null>(null);
+  const [activeCloudFileId, setActiveCloudFileId] = useState<string | null>(null);
+
   // UI state
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [hasGPS, setHasGPS] = useState(false);
+
+  const refreshCloudFiles = useCallback(async () => {
+    setIsLoadingCloud(true);
+    try {
+      const files = await listTeacherCloudFiles();
+      setCloudFiles(files);
+    } catch (err) {
+      console.error('Failed to refresh cloud files:', err);
+    } finally {
+      setIsLoadingCloud(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setTeacherUser({ id: session.user.id, email: session.user.email });
+        refreshCloudFiles();
+      } else {
+        setTeacherUser(null);
+        setCloudFiles([]);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setTeacherUser({ id: session.user.id, email: session.user.email });
+        refreshCloudFiles();
+      } else {
+        setTeacherUser(null);
+        setCloudFiles([]);
+        setActiveCloudFileId(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [refreshCloudFiles]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -186,12 +252,18 @@ export default function HomePage() {
     );
   };
 
-  const processFile = (file: File) => {
+  const processFile = (
+    file: File,
+    options?: { skipCloudUpload?: boolean; cloudFileId?: string }
+  ) => {
     setError(null);
     setUploadedFile(file);
+    if (options?.cloudFileId) {
+      setActiveCloudFileId(options.cloudFileId);
+    }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const buffer = e.target?.result as ArrayBuffer;
         const parsed = parseSpreadsheetBuffer(buffer, 'array');
@@ -206,6 +278,27 @@ export default function HomePage() {
         if (parsed.suggestedRoomName && parsed.suggestedRoomName.trim()) {
           setRoomName(parsed.suggestedRoomName.trim());
         }
+
+        // Automatically back up to Teacher's Cloud Storage if logged in & uploaded from local device
+        if (teacherUser && !options?.skipCloudUpload) {
+          setIsSyncingCloud(true);
+          try {
+            const savedCloud = await upsertTeacherCloudFile({
+              fileBlob: file,
+              filename: file.name,
+              courseName: parsed.suggestedRoomName || undefined,
+              studentCount: parsed.students.length,
+            });
+            if (savedCloud) {
+              setActiveCloudFileId(savedCloud.id);
+              await refreshCloudFiles();
+            }
+          } catch (cloudErr) {
+            console.warn('Cloud auto-backup warning:', cloudErr);
+          } finally {
+            setIsSyncingCloud(false);
+          }
+        }
       } catch {
         setError('ไม่สามารถอ่านไฟล์รายชื่อได้ กรุณาตรวจสอบไฟล์ .xlsx');
         setUploadedFile(null);
@@ -213,6 +306,52 @@ export default function HomePage() {
       }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleSelectCloudFile = async (cloudFile: TeacherCloudFile) => {
+    setError(null);
+    setLoadingCloudFileId(cloudFile.id);
+    try {
+      const downloadedFile = await downloadTeacherCloudFile(cloudFile);
+      processFile(downloadedFile, {
+        skipCloudUpload: true,
+        cloudFileId: cloudFile.id,
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'ไม่สามารถโหลดไฟล์จาก Cloud ได้'
+      );
+    } finally {
+      setLoadingCloudFileId(null);
+    }
+  };
+
+  const handleDeleteCloudFile = async (
+    e: React.MouseEvent,
+    cloudFile: TeacherCloudFile
+  ) => {
+    e.stopPropagation();
+    setDeletingCloudFileId(cloudFile.id);
+    try {
+      await deleteTeacherCloudFile(cloudFile);
+      setCloudFiles((prev) => prev.filter((f) => f.id !== cloudFile.id));
+      if (activeCloudFileId === cloudFile.id) {
+        handleResetImport();
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'ไม่สามารถลบไฟล์จาก Cloud ได้'
+      );
+    } finally {
+      setDeletingCloudFileId(null);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setTeacherUser(null);
+    setCloudFiles([]);
+    setActiveCloudFileId(null);
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -232,6 +371,7 @@ export default function HomePage() {
     setUploadedFile(null);
     setParsedRoster(null);
     setSelectedIdColumn('');
+    setActiveCloudFileId(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -262,13 +402,14 @@ export default function HomePage() {
     try {
       const secretKey = generateSecretKey();
 
-          const studentListData = parsedRoster
+      const studentListData = parsedRoster
         ? {
             xlsx_data: parsedRoster.rawGrid,
             xlsx_base64: parsedRoster.xlsxBase64,
             id_column: selectedIdColumn,
             checkmark_column: parsedRoster.nextAttendanceColumn || 'new',
             filename: uploadedFile?.name || 'student_list.xlsx',
+            cloud_file_id: activeCloudFileId || undefined,
             has_roster: parsedRoster.students.length > 0,
             course_meta: parsedRoster.courseMeta,
             roster_students: parsedRoster.students,
@@ -286,6 +427,8 @@ export default function HomePage() {
           teacher_lat: markerPosition[0],
           teacher_long: markerPosition[1],
           checkin_duration_mins: checkinDuration,
+          teacher_id: teacherUser?.id || null,
+          student_list_json: studentListData,
         })
         .select()
         .single();
@@ -324,6 +467,7 @@ export default function HomePage() {
   };
 
   const hasFile = Boolean(parsedRoster);
+  const isLoggedIn = Boolean(teacherUser);
 
   const previewStartRow = useMemo(() => {
     if (!parsedRoster) return 0;
@@ -368,7 +512,7 @@ export default function HomePage() {
   const renderMapBox = (roundedClass: string) => (
     <div className={`relative w-full h-full overflow-hidden bg-[#cbe6cc] ${roundedClass}`}>
       <MapContainer
-        key={`${mapKey}-${hasFile ? 'left' : 'right'}-${isDesktop ? 'lg' : 'sm'}`}
+        key={`${mapKey}-${hasFile || isLoggedIn ? 'left' : 'right'}-${isDesktop ? 'lg' : 'sm'}`}
         center={markerPosition}
         zoom={16}
         zoomControl={false}
@@ -458,8 +602,8 @@ export default function HomePage() {
           Attndee<span className="text-[#0051fc]">.</span>
         </Link>
 
-        {/* Right: My KU Notification Pill + คู่มือ Button */}
-        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+        {/* Right: My KU Notification Pill + Cloud Auth + คู่มือ Button */}
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           {showKuBanner && (
             <div
               onClick={() => fileInputRef.current?.click()}
@@ -497,9 +641,37 @@ export default function HomePage() {
             </div>
           )}
 
+          {/* Teacher Cloud Backup Auth Button / Status */}
+          {isLoggedIn && teacherUser ? (
+            <div className="flex items-center gap-2 bg-[#f0f5ff] border border-[#0051fc]/25 px-3.5 py-2 rounded-xl">
+              <Cloud size={16} className="text-[#0051fc] flex-shrink-0" />
+              <span className="text-xs sm:text-sm font-bold text-[#0051fc] max-w-[160px] sm:max-w-[200px] truncate">
+                {teacherUser.email}
+              </span>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="ml-1 px-2.5 py-1 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                title="ออกจากระบบ Cloud Backup"
+              >
+                <LogOut size={13} />
+                <span>ออก</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAuthModal(true)}
+              className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-[#0051fc] hover:bg-blue-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <Cloud size={16} />
+              <span>Cloud Backup / เข้าสู่ระบบ</span>
+            </button>
+          )}
+
           <Link
             href="/docs"
-            className="px-7 sm:px-9 py-2.5 bg-[#efefef] hover:bg-[#e4e4e4] text-black text-xs sm:text-sm font-bold rounded-lg transition-colors"
+            className="px-6 sm:px-8 py-2.5 bg-[#efefef] hover:bg-[#e4e4e4] text-black text-xs sm:text-sm font-bold rounded-lg transition-colors"
           >
             คู่มือ
           </Link>
@@ -511,11 +683,11 @@ export default function HomePage() {
         {/* LEFT COLUMN */}
         <div
           className={`w-full lg:w-[480px] xl:w-[520px] flex-shrink-0 flex flex-col min-h-0 ${
-            hasFile ? 'justify-between gap-4' : 'justify-start pt-4 lg:pt-8 gap-5'
+            hasFile || isLoggedIn ? 'justify-between gap-4' : 'justify-start pt-4 lg:pt-8 gap-5'
           }`}
         >
-          {/* Hero Heading + Handwritten Callout (Shown in State 1 before XLSX upload) */}
-          {!hasFile && (
+          {/* Hero Heading + Handwritten Callout (Shown in State 1 before XLSX upload when not logged in) */}
+          {!hasFile && !isLoggedIn && (
             <div className="flex items-start justify-between gap-2 w-full pb-1">
               <h1 className="text-[28px] sm:text-[34px] xl:text-[36px] font-bold text-black leading-[1.28] tracking-tight whitespace-nowrap flex-shrink-0 pt-2">
                 เช็คชื่อง่ายๆ
@@ -552,7 +724,7 @@ export default function HomePage() {
               type="text"
               value={roomName}
               onChange={(e) => setRoomName(e.target.value)}
-              placeholder="ชื่อคลาสของคุณ"
+              placeholder="ชื่อคลาสของคุณ (หรือคลิกเลือกไฟล์ Excel KU จากด้านขวา)"
               className="w-full px-5 py-4 border border-neutral-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-black transition-all text-base sm:text-lg text-black placeholder:text-gray-300 bg-white"
               maxLength={120}
             />
@@ -579,8 +751,8 @@ export default function HomePage() {
             })}
           </div>
 
-          {/* Step 3 (In Left Column when file is uploaded OR on Mobile/Tablet < 1024px) */}
-          {(hasFile || !isDesktop) && (
+          {/* Step 3 (In Left Column when file is uploaded, logged in, OR on Mobile/Tablet < 1024px) */}
+          {(hasFile || isLoggedIn || !isDesktop) && (
             <div className="w-full h-[230px] sm:h-[260px] lg:flex-1 lg:min-h-[210px] flex-shrink-0">
               {renderMapBox('rounded-[26px]')}
             </div>
@@ -608,10 +780,132 @@ export default function HomePage() {
 
         {/* RIGHT COLUMN */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          {/* State 1 (Desktop): Large Classroom Map on the Right */}
-          {!hasFile && isDesktop && (
+          {/* State 1 (Desktop, Logged Out, No File): Large Classroom Map on the Right */}
+          {!hasFile && !isLoggedIn && isDesktop && (
             <div className="w-full h-full">
               {renderMapBox('rounded-[32px]')}
+            </div>
+          )}
+
+          {/* State 1B (Logged In, No File Selected): Cloud Excel KU Files List */}
+          {!hasFile && isLoggedIn && (
+            <div className="w-full h-[460px] lg:h-full bg-[#f7f7f7] border border-gray-200 rounded-2xl flex flex-col overflow-hidden">
+              {/* Cloud Panel Header */}
+              <div className="px-5 py-4 bg-white border-b border-gray-200 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Cloud size={18} className="text-[#0051fc]" />
+                    <h3 className="text-sm sm:text-base font-bold text-black">
+                      คลังไฟล์รายชื่อ Excel KU บน Cloud ของคุณ
+                    </h3>
+                    <span className="text-xs px-2.5 py-0.5 bg-blue-50 text-[#0051fc] border border-blue-200 rounded-full font-bold">
+                      {cloudFiles.length} ไฟล์
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    คลิกเลือกไฟล์เพื่อโหลดรายชื่อเข้าห้องเรียนทันที หรือเปิดห้องปกติโดยไม่ใช้ไฟล์ก็ได้ • เมื่อกดออกจากห้องระบบจะบันทึกคะแนนทับไฟล์เดิมบน Cloud อัตโนมัติ
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-[#0051fc] hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex-shrink-0"
+                >
+                  <Upload size={14} />
+                  <span>อัปโหลดไฟล์ Excel ใหม่</span>
+                </button>
+              </div>
+
+              {/* Cloud Files List Body */}
+              <div className="flex-1 overflow-auto p-4 sm:p-5 space-y-3">
+                {isLoadingCloud ? (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2 py-12">
+                    <Loader2 size={28} className="animate-spin text-[#0051fc]" />
+                    <p className="text-sm font-medium">กำลังโหลดรายการไฟล์ Excel KU จาก Cloud...</p>
+                  </div>
+                ) : cloudFiles.length === 0 ? (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-full min-h-[260px] border-2 border-dashed border-gray-300 hover:border-[#0051fc] bg-white hover:bg-blue-50/20 rounded-2xl flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#0051fc] flex items-center justify-center mb-3">
+                      <FileSpreadsheet size={24} />
+                    </div>
+                    <p className="text-sm sm:text-base font-bold text-black">
+                      ยังไม่มีไฟล์รายชื่อ Excel KU ใน Cloud ของคุณ
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1 max-w-md">
+                      ลากไฟล์ .xlsx จาก myKU มาวางที่หน้านี้ หรือคลิกที่นี่เพื่อเลือกไฟล์ ระบบจะสำรองไฟล์ขึ้น Cloud ให้โดยอัตโนมัติ
+                    </p>
+                  </div>
+                ) : (
+                  cloudFiles.map((file) => {
+                    const isDownloadingThis = loadingCloudFileId === file.id;
+                    const isDeletingThis = deletingCloudFileId === file.id;
+                    const updatedDateStr = new Date(file.updated_at).toLocaleString('th-TH', {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    });
+
+                    return (
+                      <div
+                        key={file.id}
+                        onClick={() => {
+                          if (!isDownloadingThis && !isDeletingThis) {
+                            handleSelectCloudFile(file);
+                          }
+                        }}
+                        className={`group bg-white border border-gray-200 hover:border-[#0051fc] hover:shadow-md rounded-xl p-4 flex items-center justify-between gap-4 transition-all cursor-pointer ${
+                          isDownloadingThis ? 'opacity-70 pointer-events-none' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-3.5 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-[#f4fbf7] border border-[#2bb673]/40 text-[#1f9d5c] flex items-center justify-center flex-shrink-0 mt-0.5">
+                            {isDownloadingThis ? (
+                              <Loader2 size={20} className="animate-spin text-[#0051fc]" />
+                            ) : (
+                              <FileSpreadsheet size={20} />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-sm sm:text-base font-bold text-black group-hover:text-[#0051fc] transition-colors truncate">
+                                {file.course_name || file.filename.replace(/\.[^/.]+$/, '')}
+                              </h4>
+                              <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full font-semibold flex-shrink-0">
+                                {file.student_count} คน
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500 truncate mt-0.5">
+                              ไฟล์: {file.filename} • อัปเดตล่าสุด {updatedDateStr}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="hidden sm:inline-block text-xs font-bold text-[#0051fc] bg-blue-50 px-3 py-1.5 rounded-lg group-hover:bg-[#0051fc] group-hover:text-white transition-colors">
+                            {isDownloadingThis ? 'กำลังโหลด...' : 'เลือกใช้ไฟล์นี้'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteCloudFile(e, file)}
+                            disabled={isDeletingThis}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="ลบไฟล์นี้ออกจาก Cloud"
+                          >
+                            {isDeletingThis ? (
+                              <Loader2 size={16} className="animate-spin text-red-500" />
+                            ) : (
+                              <Trash2 size={16} />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
 
@@ -634,20 +928,38 @@ export default function HomePage() {
                     <span className="text-xs px-2.5 py-0.5 bg-[#f2fbf7] text-[#1f9d5c] border border-[#2bb673] rounded-full font-semibold flex-shrink-0">
                       เติมคะแนน (1/0): คอลัมน์ {parsedRoster.nextAttendanceColumn}
                     </span>
+                    {isLoggedIn && (
+                      <span className="text-xs px-2.5 py-0.5 bg-[#f0f5ff] text-[#0051fc] border border-[#0051fc]/30 rounded-full font-semibold flex-shrink-0 flex items-center gap-1">
+                        <Cloud size={12} />
+                        {isSyncingCloud ? 'กำลังสำรองขึ้น Cloud...' : 'ซิงค์บน Cloud แล้ว'}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate">
                     คลิกหัวคอลัมน์เพื่อเปลี่ยนคอลัมน์รหัสนิสิต • ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn} อัตโนมัติ
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleResetImport}
-                  className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
-                  title="นำไฟล์ออก"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {isLoggedIn && (
+                    <button
+                      type="button"
+                      onClick={handleResetImport}
+                      className="px-3 py-1.5 text-xs font-bold text-[#0051fc] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
+                      title="กลับไปเลือกไฟล์อื่นใน Cloud"
+                    >
+                      สลับไฟล์ Cloud
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleResetImport}
+                    className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
+                    title="นำไฟล์ออก"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               {/* Clean Spreadsheet Table */}
@@ -756,6 +1068,15 @@ export default function HomePage() {
           )}
         </div>
       </main>
+
+      {/* Teacher Cloud Backup Auth Popup Modal */}
+      <TeacherAuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={() => {
+          refreshCloudFiles();
+        }}
+      />
     </div>
   );
 }

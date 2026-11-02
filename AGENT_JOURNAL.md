@@ -189,4 +189,27 @@ During the architectural audit and pre-production refactoring passes, several cr
   - Implemented Approach 1 (Strict Roster Lock) per user decision, closing the attendance spoofing loophole from students outside the class.
   - Ensured manual override and ad-hoc rooms without Excel files remain fully functional.
 
+### [2026-11-02] Teacher Auth Popup & Cross-Device KU Excel Cloud Backup (`feat/teacher-cloud-backup`)
+- **What was done**:
+  1. **Supabase Auth, Storage & RLS Architecture**:
+     - Provisioned private bucket `teacher-rosters` (`public = false`) with 4 RLS policies (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) scoped strictly to `(storage.foldername(name))[1] = (select auth.uid())::text`.
+     - Created table `public.teacher_cloud_files` (`UNIQUE (teacher_id, filename)`) with RLS policies enforcing `(select auth.uid()) = teacher_id` and indexed on `(teacher_id, updated_at DESC)`.
+     - Added `student_list_json jsonb` and `teacher_id uuid` columns to `public.active_rooms`.
+     - Added `BEFORE INSERT` trigger `on_auth_user_auto_confirm` on `auth.users` so newly registered instructors can sign in immediately without email confirmation blocks.
+  2. **Popup Login & Register Modal (`components/TeacherAuthModal.tsx`)**:
+     - Built a clean, responsive modal with Login and Register tabs, Thai validation messages, and an explicit explanation of the Cross-Device KU Excel Cloud Backup workflow.
+  3. **Cloud Storage Helper (`utils/cloud-storage.ts`) & XLSX Blob Generator (`utils/xlsx-helper.ts`)**:
+     - Extracted `generateUpdatedXlsxBlob(options)` in `utils/xlsx-helper.ts` to produce in-place patched `.xlsx` Blobs while keeping `downloadUpdatedXlsx(options)` for local machine export.
+     - Built `listTeacherCloudFiles`, `upsertTeacherCloudFile`, `downloadTeacherCloudFile`, and `deleteTeacherCloudFile` in `utils/cloud-storage.ts`, storing files under safe UUID object paths (`{teacher_id}/{file_id}.xlsx`) so Thai filenames never cause S3 key errors.
+  4. **Teacher Workspace Cloud File List (`app/page.tsx`) & Auto-Overwrite on Room Exit (`app/room/[id]/page.tsx`)**:
+     - When logged in on `app/page.tsx`, the right column displays the teacher's saved KU Excel files (`คลังไฟล์รายชื่อ Excel KU บน Cloud ของคุณ`) with 1-click loading directly into `processFile(file)` and 1-click file deletion, while keeping the classroom GPS map accessible in the left column.
+     - Dragging and dropping a `.xlsx` file while logged in automatically backs it up to Supabase Storage.
+     - In `app/room/[id]/page.tsx`, clicking **`Export XLSX`** downloads the updated `.xlsx` to the teacher's computer as before, while clicking **`ออก`** (`handleDeleteAndExit`) automatically generates the updated `.xlsx` Blob (with today's attendance column and device fingerprints) and overwrites (`upsert: true`) the file in the teacher's Supabase Cloud Storage before closing the room.
+- **Key decisions made**:
+  - 100% Non-Breaking: Normal room creation (without Excel files) and normal drag-and-drop (logged in or logged out) work identically to before.
+  - Zero TypeScript errors (`npx tsc --noEmit` verified).
+- **What remains**:
+  - User testing on branch `feat/teacher-cloud-backup` and merge into `master` when ready.
+
+
 

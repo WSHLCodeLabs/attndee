@@ -16,10 +16,16 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase, ActiveRoom, Attendance, KURosterStudent, StudentListJson } from '@/utils/supabase';
-import { downloadUpdatedXlsx, parseSpreadsheetBuffer } from '@/utils/xlsx-helper';
+import {
+  downloadUpdatedXlsx,
+  generateUpdatedXlsxBlob,
+  parseSpreadsheetBuffer,
+  ExportXlsxOptions,
+} from '@/utils/xlsx-helper';
+import { upsertTeacherCloudFile } from '@/utils/cloud-storage';
 import { authenticator } from 'otplib';
 import { QRCodeSVG } from 'qrcode.react';
-import { Download, Shuffle, PictureInPicture2, Search, X, FileSpreadsheet } from 'lucide-react';
+import { Download, Shuffle, PictureInPicture2, Search, X, FileSpreadsheet, Loader2 } from 'lucide-react';
 import Loader from '@/components/Loader';
 
 export default function RoomPage() {
@@ -65,6 +71,7 @@ export default function RoomPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [customStudentName, setCustomStudentName] = useState('');
   const [updatingStudentId, setUpdatingStudentId] = useState<string | null>(null);
+  const [isExiting, setIsExiting] = useState(false);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Room title marquee state (auto-scrolls & loops only when title overflows container)
@@ -804,11 +811,8 @@ export default function RoomPage() {
     document.body.removeChild(link);
   };
 
-  const handleExportXLSX = async (overrideBase64?: string) => {
-    if (!room?.student_list_json?.xlsx_data) {
-      handleExportCSV();
-      return;
-    }
+  const buildRoomExportOptions = async (overrideBase64?: string): Promise<ExportXlsxOptions | null> => {
+    if (!room?.student_list_json?.xlsx_data) return null;
 
     const { xlsx_data, xlsx_base64, id_column, filename, course_meta } = room.student_list_json;
 
@@ -818,12 +822,6 @@ export default function RoomPage() {
       try {
         resolvedBase64 = localStorage.getItem('attndee_latest_xlsx_base64') || undefined;
       } catch {}
-    }
-
-    // If this room was created before the binary-preserving update, prompt the user once to pick their original .xlsx template
-    if (!resolvedBase64 && templateFileInputRef.current) {
-      templateFileInputRef.current.click();
-      return;
     }
 
     let latestFingerprints: Record<string, string> = {};
@@ -847,7 +845,7 @@ export default function RoomPage() {
 
     const lateSet = new Set(Object.keys(halfScoreIds).filter((id) => halfScoreIds[id]));
 
-    downloadUpdatedXlsx({
+    return {
       xlsxData: xlsx_data,
       xlsxBase64: resolvedBase64,
       courseMeta: course_meta,
@@ -864,7 +862,25 @@ export default function RoomPage() {
       studentFingerprints: latestFingerprints,
       filename: filename || `${room.room_name}_checked.xlsx`,
       dateLabel: new Date().toLocaleDateString('th-TH'),
-    });
+    };
+  };
+
+  const handleExportXLSX = async (overrideBase64?: string) => {
+    if (!room?.student_list_json?.xlsx_data) {
+      handleExportCSV();
+      return;
+    }
+
+    const exportOptions = await buildRoomExportOptions(overrideBase64);
+    if (!exportOptions) return;
+
+    // If this room was created before the binary-preserving update, prompt the user once to pick their original .xlsx template
+    if (!exportOptions.xlsxBase64 && templateFileInputRef.current) {
+      templateFileInputRef.current.click();
+      return;
+    }
+
+    downloadUpdatedXlsx(exportOptions);
   };
 
   const handleTemplateFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -905,7 +921,35 @@ export default function RoomPage() {
   };
 
   const handleDeleteAndExit = async () => {
-    if (!confirm('ต้องการปิดและลบห้องเช็คชื่อนี้ใช่หรือไม่?')) return;
+    if (isExiting) return;
+    if (!confirm('ต้องการปิดห้องเช็คชื่อและบันทึกผลใช่หรือไม่?')) return;
+
+    setIsExiting(true);
+    try {
+      // If teacher is logged in and this room has an Excel roster, automatically overwrite the file in Supabase Cloud Storage
+      if (room?.student_list_json?.xlsx_data) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.user) {
+          const exportOptions = await buildRoomExportOptions();
+          if (exportOptions) {
+            const updatedBlob = generateUpdatedXlsxBlob(exportOptions);
+            const targetFilename =
+              room.student_list_json.filename || `${room.room_name}.xlsx`;
+            await upsertTeacherCloudFile({
+              fileBlob: updatedBlob,
+              filename: targetFilename,
+              courseName: room.room_name,
+              studentCount: rosterStudents.length,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Cloud auto-save on exit error:', err);
+    }
+
     try {
       localStorage.removeItem(`attndee_room_roster_${roomId}`);
       localStorage.removeItem(`attndee_room_half_${roomId}`);
@@ -1201,10 +1245,18 @@ export default function RoomPage() {
                   <button
                     type="button"
                     onClick={handleDeleteAndExit}
-                    className="px-5 py-3 bg-gray-100 hover:bg-gray-200 text-black text-sm sm:text-base font-bold rounded-xl transition-colors cursor-pointer"
-                    title="ปิดและลบห้องเช็คชื่อ"
+                    disabled={isExiting}
+                    className="px-5 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-60 text-black text-sm sm:text-base font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title="ปิดห้องเช็คชื่อ (บันทึกและอัปเดตไฟล์ขึ้น Cloud อัตโนมัติหากเข้าสู่ระบบ)"
                   >
-                    ออก
+                    {isExiting ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin text-[#0051fc]" />
+                        <span>กำลังบันทึก...</span>
+                      </>
+                    ) : (
+                      <span>ออก</span>
+                    )}
                   </button>
                 </>
               )}

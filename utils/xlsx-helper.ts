@@ -1092,16 +1092,11 @@ export function buildPatchedXlsxBuffer(
 }
 
 /**
- * Generate and trigger download of the updated XLSX workbook in browser environments
+ * Generate the updated XLSX workbook as a Blob (preserving binary KU layout when base64 is available)
  */
-export function downloadUpdatedXlsx(options: ExportXlsxOptions): void {
-  if (typeof window === 'undefined') return;
-
-  const filename = options.filename || `attendance_${new Date().toISOString().slice(0, 10)}.xlsx`;
-
-  // Resolve xlsxBase64 from options or fallback to latest uploaded binary in localStorage
+export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
   let base64Source = options.xlsxBase64;
-  if (!base64Source) {
+  if (!base64Source && typeof window !== 'undefined') {
     try {
       base64Source = localStorage.getItem('attndee_latest_xlsx_base64') || undefined;
     } catch {}
@@ -1112,29 +1107,18 @@ export function downloadUpdatedXlsx(options: ExportXlsxOptions): void {
   if (base64Source) {
     const patchedBytes = buildPatchedXlsxBuffer(base64Source, options);
     if (patchedBytes) {
-      const blob = new Blob([patchedBytes as unknown as BlobPart], {
+      return new Blob([patchedBytes as unknown as BlobPart], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      return;
     }
   }
 
-  // 2. Fallback for generic spreadsheets when no binary is available:
-  // Re-shift grid if needed so KU files start at B2 (Row 2, Col B) and apply column widths & merges
+  // 2. Fallback for generic spreadsheets when no binary is available
   let grid = buildUpdatedXlsxGrid(options);
   if (
     grid.length > 0 &&
     String(grid[0]?.[0] ?? '').includes('รายงานแสดงจำนวนนิสิต')
   ) {
-    // This grid was saved by an older session without the A1 (0,0) origin fix — restore Row 1 & Col A padding!
     grid = [
       [],
       ...grid.map((row) => ['', ...(Array.isArray(row) ? row : [])]),
@@ -1162,5 +1146,26 @@ export function downloadUpdatedXlsx(options: ExportXlsxOptions): void {
   ];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet 1');
-  XLSX.writeFile(workbook, filename);
+  const outBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  return new Blob([outBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
+/**
+ * Generate and trigger download of the updated XLSX workbook in browser environments
+ */
+export function downloadUpdatedXlsx(options: ExportXlsxOptions): void {
+  if (typeof window === 'undefined') return;
+
+  const filename = options.filename || `attendance_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const blob = generateUpdatedXlsxBlob(options);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
