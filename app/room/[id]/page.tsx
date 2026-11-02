@@ -72,6 +72,8 @@ export default function RoomPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [customStudentName, setCustomStudentName] = useState('');
   const [updatingStudentId, setUpdatingStudentId] = useState<string | null>(null);
+  // Track cards playing the subtle receding collapse animation (student_id -> optimistic score)
+  const [collapsingScores, setCollapsingScores] = useState<Record<string, 0 | 0.5 | 1>>({});
   const [isExiting, setIsExiting] = useState(false);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -623,7 +625,7 @@ export default function RoomPage() {
   };
 
   /**
-   * Quick Score Action (0, 0.5, 1.0) for any student
+   * Quick Score Action (0, 0.5, 1.0) for any student — Optimistic 0ms UI with subtle receding card animation
    */
   const handleSetStudentScore = async (
     student: {
@@ -635,81 +637,100 @@ export default function RoomPage() {
   ) => {
     if (!room) return;
     const cleanId = student.student_id.trim();
-    setUpdatingStudentId(cleanId);
+    const isCurrentlyCheckedIn = checkedInIdSet.has(cleanId);
+    const isSearching = searchQuery.trim().length > 0;
+    const willLeaveCurrentTab =
+      !isSearching &&
+      ((score === 0 && isCurrentlyCheckedIn && activeTab === 'present') ||
+        (score > 0 && !isCurrentlyCheckedIn && activeTab === 'absent'));
 
-    try {
-      // If room has an Excel roster, make sure any added/managed student is enrolled in rosterStudents
-      if (rosterStudents.length > 0) {
-        const isAlreadyInRoster = rosterStudents.some(
-          (s) => s.student_id.trim() === cleanId
-        );
-        if (!isAlreadyInRoster) {
-          const newRosterStudent: KURosterStudent = {
-            row_index: rosterStudents.length + 1,
+    // 1. Update half-score state immediately in 0ms
+    updateHalfScore(cleanId, score === 0.5);
+
+    // 2. If room has an Excel roster, make sure any added/managed student is enrolled in rosterStudents in the background
+    if (rosterStudents.length > 0) {
+      const isAlreadyInRoster = rosterStudents.some(
+        (s) => s.student_id.trim() === cleanId
+      );
+      if (!isAlreadyInRoster) {
+        const newRosterStudent: KURosterStudent = {
+          row_index: rosterStudents.length + 1,
+          student_id: cleanId,
+          name_th: `${student.first_name} ${student.last_name}`.trim(),
+          first_name: student.first_name || cleanId,
+          last_name: student.last_name || '-',
+          status: 'Extra',
+        };
+        const updatedRoster = [...rosterStudents, newRosterStudent];
+        void persistUpdatedRoster(updatedRoster);
+      }
+    }
+
+    // 3. Helper to commit the optimistic attendanceList state update
+    const commitAttendanceState = () => {
+      if (score === 0) {
+        setAttendanceList((prev) => prev.filter((a) => a.student_id.trim() !== cleanId));
+      } else if (!isCurrentlyCheckedIn) {
+        setAttendanceList((prev) => {
+          if (prev.some((a) => a.student_id.trim() === cleanId)) return prev;
+          const next: Attendance = {
+            id: `manual-${cleanId}-${Date.now()}`,
+            room_id: roomId,
             student_id: cleanId,
-            name_th: `${student.first_name} ${student.last_name}`.trim(),
             first_name: student.first_name || cleanId,
             last_name: student.last_name || '-',
-            status: 'Extra',
+            year_level: 1,
+            student_lat: room.teacher_lat,
+            student_long: room.teacher_long,
+            checkin_time: new Date().toISOString(),
           };
-          const updatedRoster = [...rosterStudents, newRosterStudent];
-          await persistUpdatedRoster(updatedRoster);
-        }
+          return [next, ...prev];
+        });
       }
+    };
 
+    // 4. Play subtle 210ms receding animation if card is moving out of the active tab; otherwise update immediately
+    if (willLeaveCurrentTab) {
+      setCollapsingScores((prev) => ({ ...prev, [cleanId]: score }));
+      setTimeout(() => {
+        commitAttendanceState();
+        setCollapsingScores((prev) => {
+          const next = { ...prev };
+          delete next[cleanId];
+          return next;
+        });
+      }, 210);
+    } else {
+      commitAttendanceState();
+    }
+
+    // 5. Fire database persistence in the background without blocking UI
+    try {
       if (score === 0) {
-        // Remove attendance if checked in
-        updateHalfScore(cleanId, false);
-        setAttendanceList((prev) => prev.filter((a) => a.student_id.trim() !== cleanId));
         await supabase
           .from('attendance')
           .delete()
           .eq('room_id', roomId)
           .eq('student_id', cleanId);
-      } else {
-        // Score is 0.5 or 1.0 -> ensure student is checked in
-        updateHalfScore(cleanId, score === 0.5);
-
-        if (!checkedInIdSet.has(cleanId)) {
-          const response = await fetch('/api/checkin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              room_id: roomId,
-              token: 'MANUAL_OVERRIDE',
-              student_id: cleanId,
-              student_lat: room.teacher_lat,
-              student_long: room.teacher_long,
-              first_name: student.first_name || cleanId,
-              last_name: student.last_name || '-',
-              year_level: 1,
-              is_manual_override: true,
-            }),
-          });
-
-          if (response.ok) {
-            setAttendanceList((prev) => {
-              if (prev.some((a) => a.student_id.trim() === cleanId)) return prev;
-              const next: Attendance = {
-                id: `manual-${cleanId}-${Date.now()}`,
-                room_id: roomId,
-                student_id: cleanId,
-                first_name: student.first_name || cleanId,
-                last_name: student.last_name || '-',
-                year_level: 1,
-                student_lat: room.teacher_lat,
-                student_long: room.teacher_long,
-                checkin_time: new Date().toISOString(),
-              };
-              return [next, ...prev];
-            });
-          }
-        }
+      } else if (!isCurrentlyCheckedIn) {
+        await fetch('/api/checkin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room_id: roomId,
+            token: 'MANUAL_OVERRIDE',
+            student_id: cleanId,
+            student_lat: room.teacher_lat,
+            student_long: room.teacher_long,
+            first_name: student.first_name || cleanId,
+            last_name: student.last_name || '-',
+            year_level: 1,
+            is_manual_override: true,
+          }),
+        });
       }
     } catch (err) {
       console.error('Quick score update failed:', err);
-    } finally {
-      setUpdatingStudentId(null);
     }
   };
 
@@ -1007,8 +1028,16 @@ export default function RoomPage() {
     const cleanId = student.student_id.trim();
     const isCheckedIn = checkedInIdSet.has(cleanId);
     const isHalf = Boolean(halfScoreIds[cleanId]);
-    const currentScore: 0 | 0.5 | 1 = !isCheckedIn ? 0 : isHalf ? 0.5 : 1;
-    const isBusy = updatingStudentId === cleanId;
+    const collapsingOverride = collapsingScores[cleanId];
+    const currentScore: 0 | 0.5 | 1 =
+      collapsingOverride !== undefined
+        ? collapsingOverride
+        : !isCheckedIn
+          ? 0
+          : isHalf
+            ? 0.5
+            : 1;
+    const isBusy = updatingStudentId === cleanId || collapsingOverride !== undefined;
 
     return (
       <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
@@ -1535,8 +1564,10 @@ export default function RoomPage() {
                   </div>
                 ) : (
                   attendanceList.map((attendance, idx) => {
+                    const cleanId = attendance.student_id.trim();
+                    const isCollapsing = collapsingScores[cleanId] !== undefined;
                     const rosterMatch = rosterStudents.find(
-                      (s) => s.student_id.trim() === attendance.student_id.trim()
+                      (s) => s.student_id.trim() === cleanId
                     );
                     const fullName =
                       rosterMatch?.name_th ||
@@ -1545,7 +1576,11 @@ export default function RoomPage() {
                     return (
                       <div
                         key={attendance.id}
-                        className="bg-white rounded-2xl px-6 py-4 flex items-center justify-between gap-4 border border-gray-100 shadow-2xs"
+                        className={`bg-white rounded-2xl px-6 flex items-center justify-between gap-4 border shadow-2xs origin-center transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                          isCollapsing
+                            ? 'scale-[0.94] opacity-0 max-h-0 py-0 my-0 border-transparent overflow-hidden pointer-events-none'
+                            : 'scale-100 opacity-100 max-h-28 py-4 border-gray-100'
+                        }`}
                       >
                         <div className="flex items-center gap-4 min-w-0">
                           <span className="text-sm sm:text-base font-mono text-gray-400 w-7 text-center flex-shrink-0">
@@ -1594,30 +1629,38 @@ export default function RoomPage() {
                 </div>
               ) : (
                 /* ABSENT TAB (List with 0 | 0.5 | 1.0 Quick Score Buttons) */
-                absentStudents.map((student) => (
-                  <div
-                    key={student.student_id}
-                    className="bg-white rounded-2xl px-6 py-4 flex items-center justify-between gap-4 border border-gray-100 shadow-2xs"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-black text-base sm:text-lg truncate">
-                          {student.name_th || `${student.first_name} ${student.last_name}`}
+                absentStudents.map((student) => {
+                  const cleanId = student.student_id.trim();
+                  const isCollapsing = collapsingScores[cleanId] !== undefined;
+                  return (
+                    <div
+                      key={student.student_id}
+                      className={`bg-white rounded-2xl px-6 flex items-center justify-between gap-4 border shadow-2xs origin-center transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                        isCollapsing
+                          ? 'scale-[0.94] opacity-0 max-h-0 py-0 my-0 border-transparent overflow-hidden pointer-events-none'
+                          : 'scale-100 opacity-100 max-h-28 py-4 border-gray-100'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-black text-base sm:text-lg truncate">
+                            {student.name_th || `${student.first_name} ${student.last_name}`}
+                          </p>
+                          {student.status === 'Extra' && (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded-md flex-shrink-0">
+                              นอกรายชื่อ
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs sm:text-sm text-gray-500 font-mono">
+                          {student.student_id}
                         </p>
-                        {student.status === 'Extra' && (
-                          <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded-md flex-shrink-0">
-                            นอกรายชื่อ
-                          </span>
-                        )}
                       </div>
-                      <p className="text-xs sm:text-sm text-gray-500 font-mono">
-                        {student.student_id}
-                      </p>
-                    </div>
 
-                    {renderQuickScoreButtons(student)}
-                  </div>
-                ))
+                      {renderQuickScoreButtons(student)}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
