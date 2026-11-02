@@ -1006,6 +1006,31 @@ export function buildPatchedXlsxBuffer(
       return rowXml.replace('</row>', `${newCellXml}</row>`);
     };
 
+    // CRITICAL OOXML RULE: Microsoft Excel strictly requires <c r="..."> elements inside a <row>
+    // to appear in ascending column order (e.g. B, C, ..., K, L, M, ..., Z). If M appears after Z,
+    // Excel marks sheet1.xml as unreadable and strips the cells.
+    const sortRowCellsInXml = (rowXml: string): string => {
+      return rowXml.replace(
+        /^(<row\b[^>]*>)([\s\S]*?)(<\/row>)$/,
+        (full, openTag, inner, closeTag) => {
+          const cellRegex = /<c\b[^>]*\br="([A-Z]+)\d+"[^>]*(?:\/>|>[\s\S]*?<\/c>)/g;
+          const cells: { colIdx: number; xml: string }[] = [];
+          let m: RegExpExecArray | null;
+          while ((m = cellRegex.exec(inner)) !== null) {
+            cells.push({
+              colIdx: getColumnIndex(m[1]),
+              xml: m[0],
+            });
+          }
+          if (cells.length <= 1) return full;
+          cells.sort((a, b) => a.colIdx - b.colIdx);
+          return `${openTag}${cells.map((c) => c.xml).join('')}${closeTag}`;
+        }
+      );
+    };
+
+    const fpColIdx = courseMeta.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX;
+
     // Update each row in updatedGrid from headerRowIdx onwards
     for (let r0 = headerRowIdx; r0 < updatedGrid.length; r0++) {
       const row = updatedGrid[r0];
@@ -1040,11 +1065,14 @@ export function buildPatchedXlsxBuffer(
 
         const cellRef = `${getColumnLetter(c0)}${excelRowNum}`;
         const existingCellRegex = new RegExp(`<c\\s+r="${cellRef}"[^>]*(?:/>|>[\\s\\S]*?<\\/c>)`);
-        if (!existingCellRegex.test(rowXml)) {
+        if (!existingCellRegex.test(rowXml) || c0 === fpColIdx) {
           const cellXml = buildCellXml(r0, c0, val, rowStyle);
           rowXml = upsertCellInRowXml(rowXml, cellRef, cellXml);
         }
       }
+
+      // Guarantee ascending column order (A..Z) inside <row> for Microsoft Excel OOXML compliance
+      rowXml = sortRowCellsInXml(rowXml);
 
       // Update spans="2:11" attribute on <row> if present so Excel knows the new width
       rowXml = rowXml.replace(/spans="(\d+):(\d+)"/, (_m, startSpan) => {
@@ -1062,9 +1090,9 @@ export function buildPatchedXlsxBuffer(
     });
 
     // Ensure the attendance column(s) have a clean readable width in <cols> (e.g. width="13.5")
+    // and keep <col> elements strictly sorted by min attribute
     if (xml.includes('</cols>')) {
       let lastNonEmptyBeforeFp = idColIdx;
-      const fpColIdx = courseMeta.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX;
       for (let c = idColIdx; c < fpColIdx; c++) {
         const cellVal = String(updatedGrid[headerRowIdx]?.[c] ?? '').trim();
         if (cellVal !== '') lastNonEmptyBeforeFp = c;
@@ -1074,6 +1102,21 @@ export function buildPatchedXlsxBuffer(
       if (!xml.includes(`min="${col1Based}"`)) {
         xml = xml.replace('</cols>', `${colDef}</cols>`);
       }
+      xml = xml.replace(/<cols>([\s\S]*?)<\/cols>/, (_full, innerCols) => {
+        const colRegex = /<col\b[^>]*\bmin="(\d+)"[^>]*\/>/g;
+        const cols: { min: number; xml: string }[] = [];
+        const seenMin = new Set<number>();
+        let cm: RegExpExecArray | null;
+        while ((cm = colRegex.exec(innerCols)) !== null) {
+          const minNum = Number(cm[1]);
+          if (!seenMin.has(minNum)) {
+            seenMin.add(minNum);
+            cols.push({ min: minNum, xml: cm[0] });
+          }
+        }
+        cols.sort((a, b) => a.min - b.min);
+        return `<cols>${cols.map((c) => c.xml).join('')}</cols>`;
+      });
     }
 
     const encodedXml =

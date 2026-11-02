@@ -643,29 +643,25 @@ export default function HomePage() {
 
           {/* Teacher Cloud Backup Auth Button / Status */}
           {isLoggedIn && teacherUser ? (
-            <div className="flex items-center gap-2 bg-[#f0f5ff] border border-[#0051fc]/25 px-3.5 py-2 rounded-xl">
-              <Cloud size={16} className="text-[#0051fc] flex-shrink-0" />
-              <span className="text-xs sm:text-sm font-bold text-[#0051fc] max-w-[160px] sm:max-w-[200px] truncate">
+            <div className="flex items-center gap-3 bg-[#efefef] px-4 py-2 rounded-lg">
+              <span className="text-xs sm:text-sm font-bold text-black max-w-[160px] sm:max-w-[200px] truncate">
                 {teacherUser.email}
               </span>
               <button
                 type="button"
                 onClick={handleSignOut}
-                className="ml-1 px-2.5 py-1 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                title="ออกจากระบบ Cloud Backup"
+                className="text-xs font-bold text-gray-500 hover:text-red-600 transition-colors cursor-pointer"
               >
-                <LogOut size={13} />
-                <span>ออก</span>
+                ออก
               </button>
             </div>
           ) : (
             <button
               type="button"
               onClick={() => setShowAuthModal(true)}
-              className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-[#0051fc] hover:bg-blue-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+              className="px-6 sm:px-7 py-2.5 bg-[#0051fc] hover:bg-blue-700 text-white text-xs sm:text-sm font-bold rounded-lg transition-colors cursor-pointer"
             >
-              <Cloud size={16} />
-              <span>Cloud Backup / เข้าสู่ระบบ</span>
+              เข้าสู่ระบบ
             </button>
           )}
 
@@ -724,7 +720,7 @@ export default function HomePage() {
               type="text"
               value={roomName}
               onChange={(e) => setRoomName(e.target.value)}
-              placeholder="ชื่อคลาสของคุณ (หรือคลิกเลือกไฟล์ Excel KU จากด้านขวา)"
+              placeholder="ชื่อคลาสของคุณ"
               className="w-full px-5 py-4 border border-neutral-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-black transition-all text-base sm:text-lg text-black placeholder:text-gray-300 bg-white"
               maxLength={120}
             />
@@ -791,52 +787,41 @@ export default function HomePage() {
           {!hasFile && isLoggedIn && (
             <div className="w-full h-[460px] lg:h-full bg-[#f7f7f7] border border-gray-200 rounded-2xl flex flex-col overflow-hidden">
               {/* Cloud Panel Header */}
-              <div className="px-5 py-4 bg-white border-b border-gray-200 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Cloud size={18} className="text-[#0051fc]" />
-                    <h3 className="text-sm sm:text-base font-bold text-black">
-                      คลังไฟล์รายชื่อ Excel KU บน Cloud ของคุณ
-                    </h3>
-                    <span className="text-xs px-2.5 py-0.5 bg-blue-50 text-[#0051fc] border border-blue-200 rounded-full font-bold">
-                      {cloudFiles.length} ไฟล์
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    คลิกเลือกไฟล์เพื่อโหลดรายชื่อเข้าห้องเรียนทันที หรือเปิดห้องปกติโดยไม่ใช้ไฟล์ก็ได้ • เมื่อกดออกจากห้องระบบจะบันทึกคะแนนทับไฟล์เดิมบน Cloud อัตโนมัติ
-                  </p>
+              <div className="px-5 py-3.5 bg-white border-b border-gray-200 flex items-center justify-between gap-3 flex-shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-black">
+                    ไฟล์รายชื่อ
+                  </h3>
+                  <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full font-semibold">
+                    {cloudFiles.length}
+                  </span>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-[#0051fc] hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex-shrink-0"
+                  className="px-3.5 py-1.5 bg-[#efefef] hover:bg-[#e4e4e4] text-black text-xs font-bold rounded-lg transition-colors cursor-pointer flex-shrink-0"
                 >
-                  <Upload size={14} />
-                  <span>อัปโหลดไฟล์ Excel ใหม่</span>
+                  + เพิ่มไฟล์
                 </button>
               </div>
 
               {/* Cloud Files List Body */}
-              <div className="flex-1 overflow-auto p-4 sm:p-5 space-y-3">
+              <div className="flex-1 overflow-auto p-4 space-y-2.5">
                 {isLoadingCloud ? (
-                  <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2 py-12">
-                    <Loader2 size={28} className="animate-spin text-[#0051fc]" />
-                    <p className="text-sm font-medium">กำลังโหลดรายการไฟล์ Excel KU จาก Cloud...</p>
+                  <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+                    กำลังโหลด...
                   </div>
                 ) : cloudFiles.length === 0 ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="h-full min-h-[260px] border-2 border-dashed border-gray-300 hover:border-[#0051fc] bg-white hover:bg-blue-50/20 rounded-2xl flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all"
+                    className="h-full min-h-[240px] border border-dashed border-gray-300 hover:border-black bg-white rounded-xl flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-colors"
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#0051fc] flex items-center justify-center mb-3">
-                      <FileSpreadsheet size={24} />
-                    </div>
-                    <p className="text-sm sm:text-base font-bold text-black">
-                      ยังไม่มีไฟล์รายชื่อ Excel KU ใน Cloud ของคุณ
+                    <p className="text-sm font-bold text-black">
+                      ยังไม่มีไฟล์รายชื่อ
                     </p>
-                    <p className="text-xs text-gray-500 mt-1 max-w-md">
-                      ลากไฟล์ .xlsx จาก myKU มาวางที่หน้านี้ หรือคลิกที่นี่เพื่อเลือกไฟล์ ระบบจะสำรองไฟล์ขึ้น Cloud ให้โดยอัตโนมัติ
+                    <p className="text-xs text-gray-400 mt-1">
+                      ลากไฟล์ .xlsx มาวาง หรือคลิกเพื่อเลือกไฟล์
                     </p>
                   </div>
                 ) : (
@@ -844,7 +829,7 @@ export default function HomePage() {
                     const isDownloadingThis = loadingCloudFileId === file.id;
                     const isDeletingThis = deletingCloudFileId === file.id;
                     const updatedDateStr = new Date(file.updated_at).toLocaleString('th-TH', {
-                      dateStyle: 'medium',
+                      dateStyle: 'short',
                       timeStyle: 'short',
                     });
 
@@ -856,48 +841,34 @@ export default function HomePage() {
                             handleSelectCloudFile(file);
                           }
                         }}
-                        className={`group bg-white border border-gray-200 hover:border-[#0051fc] hover:shadow-md rounded-xl p-4 flex items-center justify-between gap-4 transition-all cursor-pointer ${
-                          isDownloadingThis ? 'opacity-70 pointer-events-none' : ''
+                        className={`group bg-white border border-gray-200 hover:border-black rounded-xl px-4 py-3.5 flex items-center justify-between gap-4 transition-all cursor-pointer ${
+                          isDownloadingThis ? 'opacity-60 pointer-events-none' : ''
                         }`}
                       >
-                        <div className="flex items-start gap-3.5 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-[#f4fbf7] border border-[#2bb673]/40 text-[#1f9d5c] flex items-center justify-center flex-shrink-0 mt-0.5">
-                            {isDownloadingThis ? (
-                              <Loader2 size={20} className="animate-spin text-[#0051fc]" />
-                            ) : (
-                              <FileSpreadsheet size={20} />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="text-sm sm:text-base font-bold text-black group-hover:text-[#0051fc] transition-colors truncate">
-                                {file.course_name || file.filename.replace(/\.[^/.]+$/, '')}
-                              </h4>
-                              <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full font-semibold flex-shrink-0">
-                                {file.student_count} คน
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-500 truncate mt-0.5">
-                              ไฟล์: {file.filename} • อัปเดตล่าสุด {updatedDateStr}
-                            </p>
-                          </div>
+                        <div className="min-w-0">
+                          <h4 className="text-sm sm:text-base font-bold text-black group-hover:text-[#0051fc] transition-colors truncate">
+                            {file.course_name || file.filename.replace(/\.[^/.]+$/, '')}
+                          </h4>
+                          <p className="text-xs text-gray-400 truncate mt-0.5">
+                            {file.filename} · {file.student_count} คน
+                          </p>
                         </div>
 
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="hidden sm:inline-block text-xs font-bold text-[#0051fc] bg-blue-50 px-3 py-1.5 rounded-lg group-hover:bg-[#0051fc] group-hover:text-white transition-colors">
-                            {isDownloadingThis ? 'กำลังโหลด...' : 'เลือกใช้ไฟล์นี้'}
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span className="hidden sm:inline-block text-xs text-gray-400">
+                            {isDownloadingThis ? 'กำลังโหลด...' : updatedDateStr}
                           </span>
                           <button
                             type="button"
                             onClick={(e) => handleDeleteCloudFile(e, file)}
                             disabled={isDeletingThis}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                            title="ลบไฟล์นี้ออกจาก Cloud"
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="ลบไฟล์"
                           >
                             {isDeletingThis ? (
-                              <Loader2 size={16} className="animate-spin text-red-500" />
+                              <Loader2 size={15} className="animate-spin text-red-500" />
                             ) : (
-                              <Trash2 size={16} />
+                              <Trash2 size={15} />
                             )}
                           </button>
                         </div>
@@ -928,38 +899,20 @@ export default function HomePage() {
                     <span className="text-xs px-2.5 py-0.5 bg-[#f2fbf7] text-[#1f9d5c] border border-[#2bb673] rounded-full font-semibold flex-shrink-0">
                       เติมคะแนน (1/0): คอลัมน์ {parsedRoster.nextAttendanceColumn}
                     </span>
-                    {isLoggedIn && (
-                      <span className="text-xs px-2.5 py-0.5 bg-[#f0f5ff] text-[#0051fc] border border-[#0051fc]/30 rounded-full font-semibold flex-shrink-0 flex items-center gap-1">
-                        <Cloud size={12} />
-                        {isSyncingCloud ? 'กำลังสำรองขึ้น Cloud...' : 'ซิงค์บน Cloud แล้ว'}
-                      </span>
-                    )}
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate">
                     คลิกหัวคอลัมน์เพื่อเปลี่ยนคอลัมน์รหัสนิสิต • ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn} อัตโนมัติ
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {isLoggedIn && (
-                    <button
-                      type="button"
-                      onClick={handleResetImport}
-                      className="px-3 py-1.5 text-xs font-bold text-[#0051fc] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
-                      title="กลับไปเลือกไฟล์อื่นใน Cloud"
-                    >
-                      สลับไฟล์ Cloud
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleResetImport}
-                    className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
-                    title="นำไฟล์ออก"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleResetImport}
+                  className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
+                  title="นำไฟล์ออก"
+                >
+                  <X size={18} />
+                </button>
               </div>
 
               {/* Clean Spreadsheet Table */}
