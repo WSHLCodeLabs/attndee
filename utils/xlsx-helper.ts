@@ -676,8 +676,12 @@ export function parseRosterGrid(
   // 5. Calculate Next Attendance Column (first empty column after table headers & prior dates,
   // ignoring any legacy 'Fingerprint' column or previous 'รวม' summary column)
   const effectiveHeaderRow = Math.max(0, headerRowIndex);
+  const headerScanWidth = Math.max(
+    Array.isArray(rawGrid[effectiveHeaderRow]) ? rawGrid[effectiveHeaderRow].length : 0,
+    idColIndex + 1
+  );
   let lastNonEmptyBeforeFp = idColIndex;
-  for (let c = idColIndex; c < fingerprintColIndex; c++) {
+  for (let c = idColIndex; c < headerScanWidth; c++) {
     const cellVal = String(rawGrid[effectiveHeaderRow]?.[c] ?? '').trim();
     if (cellVal !== '' && !isFingerprintHeader(cellVal) && !isSummaryHeader(cellVal)) {
       lastNonEmptyBeforeFp = c;
@@ -686,13 +690,8 @@ export function parseRosterGrid(
   const nextAttendanceColIndex = lastNonEmptyBeforeFp + 1;
   const nextAttendanceColumn = getColumnLetter(nextAttendanceColIndex);
 
-  // 6. Build Column Headers ('A', 'B', 'C', ...)
-  const maxCols = Math.max(
-    ...rawGrid.map((r) => (Array.isArray(r) ? r.length : 0)),
-    nextAttendanceColIndex + 1,
-    fingerprintColIndex + 1,
-    1
-  );
+  // 6. Build Column Headers ('A', 'B', 'C', ...) without extending out to distant legacy Fingerprint columns
+  const maxCols = Math.max(nextAttendanceColIndex + 1, 12);
   const columnHeaders = Array.from({ length: maxCols }, (_, i) => getColumnLetter(i));
   const selectedIdColumn = getColumnLetter(idColIndex);
 
@@ -823,16 +822,11 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
     grid.push([]);
   }
 
-  // Determine target fpColIndex (minimum DEFAULT_FINGERPRINT_COL_INDEX = 37 = Column AL)
-  let fpColIndex = Math.max(
-    DEFAULT_FINGERPRINT_COL_INDEX,
-    courseMeta?.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX
-  );
-
-  // Detect any legacy fingerprint columns (< fpColIndex, e.g. Column Z = 25) or prior summary columns
+  // Detect any legacy fingerprint columns (e.g. Column Z = 25 or AL = 37) or prior summary columns
+  const headerRowWidth = Array.isArray(grid[headerRowIndex]) ? grid[headerRowIndex].length : 0;
   const legacyFpCols: number[] = [];
   const staleSummaryCols: number[] = [];
-  for (let c = idColIndex + 1; c < fpColIndex; c++) {
+  for (let c = idColIndex + 1; c < headerRowWidth; c++) {
     const hVal = String(grid[headerRowIndex]?.[c] ?? '').trim();
     if (isFingerprintHeader(hVal)) {
       legacyFpCols.push(c);
@@ -842,9 +836,9 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
   }
 
   // CRITICAL Attendance Column Placement:
-  // Find the last non-empty header column strictly before fpColIndex, ignoring legacy Fingerprint and 'รวม' headers
+  // Find the last non-empty header column, ignoring legacy Fingerprint and 'รวม' headers
   let lastNonEmptyBeforeFp = idColIndex;
-  for (let c = idColIndex; c < fpColIndex; c++) {
+  for (let c = idColIndex; c < headerRowWidth; c++) {
     const cellVal = String(grid[headerRowIndex]?.[c] ?? '').trim();
     if (cellVal !== '' && !isFingerprintHeader(cellVal) && !isSummaryHeader(cellVal)) {
       lastNonEmptyBeforeFp = c;
@@ -857,28 +851,22 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
       : lastNonEmptyBeforeFp + 1
     : -1;
 
-  // If the table ever grows to reach or exceed fpColIndex, shift fpColIndex further right
-  const lastRequiredBeforeFp = Math.max(appendColIndex, summaryColIndex, lastNonEmptyBeforeFp);
-  if (lastRequiredBeforeFp >= fpColIndex) {
-    fpColIndex = lastRequiredBeforeFp + 5;
-  }
-
   // Clear any legacy Fingerprint or stale Summary headers that aren't being overwritten right now
   for (const oldCol of [...legacyFpCols, ...staleSummaryCols]) {
-    if (oldCol !== appendColIndex && oldCol !== summaryColIndex && oldCol !== fpColIndex) {
+    if (oldCol !== appendColIndex && oldCol !== summaryColIndex) {
       if (grid[headerRowIndex]?.[oldCol] !== undefined) {
         grid[headerRowIndex][oldCol] = '';
       }
     }
   }
 
-  // Ensure header row has sufficient length to hold appendColIndex, summaryColIndex, and fpColIndex
-  const maxHeaderCol = Math.max(appendColIndex, summaryColIndex, fpColIndex);
+  // Ensure header row has sufficient length to hold appendColIndex and summaryColIndex
+  const maxHeaderCol = Math.max(appendColIndex, summaryColIndex, lastNonEmptyBeforeFp);
   while (grid[headerRowIndex].length <= maxHeaderCol) {
     grid[headerRowIndex].push('');
   }
 
-  // Write column header label (e.g., '14/10/2569' or custom dateLabel), optional 'รวม', and 'Fingerprint' at AL
+  // Write column header label (e.g., '14/10/2569' or custom dateLabel) and optional 'รวม'
   const todayLabel = dateLabel || new Date().toLocaleDateString('th-TH');
   if (appendColIndex >= 0) {
     grid[headerRowIndex][appendColIndex] = todayLabel;
@@ -886,7 +874,13 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
   if (summaryColIndex >= 0) {
     grid[headerRowIndex][summaryColIndex] = 'รวม';
   }
-  grid[headerRowIndex][fpColIndex] = 'Fingerprint';
+  // Trim trailing empty cells from header row (e.g. after clearing legacy Z/AL Fingerprint)
+  while (
+    grid[headerRowIndex].length > maxHeaderCol + 1 &&
+    String(grid[headerRowIndex][grid[headerRowIndex].length - 1] ?? '').trim() === ''
+  ) {
+    grid[headerRowIndex].pop();
+  }
 
   // Identify all attendance date columns (up to and including appendColIndex or lastNonEmptyBeforeFp) for summing into 'รวม'
   const maxAttScanCol = appendColIndex >= 0 ? appendColIndex : lastNonEmptyBeforeFp;
@@ -950,25 +944,17 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
 
     matchedStudentIds.add(studentId);
 
-    // Harvest any existing fingerprint from legacy Z column before clearing it
-    let existingLegacyFp = '';
-    for (const oldFpCol of legacyFpCols) {
-      const candidate = String(row[oldFpCol] ?? '').trim();
-      if (candidate && !isFingerprintHeader(candidate) && candidate.toLowerCase() !== 'unknown') {
-        existingLegacyFp = candidate;
-      }
-      if (oldFpCol !== appendColIndex && oldFpCol !== summaryColIndex && oldFpCol !== fpColIndex) {
-        row[oldFpCol] = '';
-      }
-    }
-    for (const oldSumCol of staleSummaryCols) {
-      if (oldSumCol !== appendColIndex && oldSumCol !== summaryColIndex && oldSumCol !== fpColIndex) {
-        row[oldSumCol] = '';
+    // Clear any legacy Fingerprint or stale Summary columns
+    for (const oldCol of [...legacyFpCols, ...staleSummaryCols]) {
+      if (oldCol !== appendColIndex && oldCol !== summaryColIndex) {
+        if (row[oldCol] !== undefined) {
+          row[oldCol] = '';
+        }
       }
     }
 
-    // Ensure row has sufficient length to hold appendColIndex, summaryColIndex, and fpColIndex
-    const targetRowLength = Math.max(appendColIndex, summaryColIndex, fpColIndex) + 1;
+    // Ensure row has sufficient length to hold appendColIndex and summaryColIndex
+    const targetRowLength = maxHeaderCol + 1;
     while (row.length < targetRowLength) {
       row.push('');
     }
@@ -991,13 +977,9 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
       row[summaryColIndex] = computeStudentTotalScore(row);
     }
 
-    // Persist student device fingerprint in Column AL (fpColIndex = 37)
-    const fp =
-      options.studentFingerprints?.[studentId] ||
-      String(row[fpColIndex] ?? '').trim() ||
-      existingLegacyFp;
-    if (fp && fp.toLowerCase() !== 'unknown' && !isFingerprintHeader(fp)) {
-      row[fpColIndex] = fp;
+    // Trim trailing empty cells after maxHeaderCol
+    while (row.length > targetRowLength && String(row[row.length - 1] ?? '').trim() === '') {
+      row.pop();
     }
   }
 
@@ -1028,7 +1010,7 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
 
       for (const extra of unlistedStudents) {
         const cleanExtraId = String(extra.student_id).trim();
-        const targetRowLength = Math.max(appendColIndex, summaryColIndex, fpColIndex) + 1;
+        const targetRowLength = maxHeaderCol + 1;
         const newRow: any[] = new Array(targetRowLength).fill('');
         newRow[idColIndex] = cleanExtraId;
 
@@ -1041,20 +1023,16 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
         }
 
         const isLate = lateSet.has(cleanExtraId);
-        if (checkedInSet.has(cleanExtraId)) {
-          newRow[appendColIndex] = isLate && lateScore !== undefined ? Number(lateScore) : 1;
-        } else {
-          newRow[appendColIndex] = 0;
+        if (appendColIndex >= 0) {
+          if (checkedInSet.has(cleanExtraId)) {
+            newRow[appendColIndex] = isLate && lateScore !== undefined ? Number(lateScore) : 1;
+          } else {
+            newRow[appendColIndex] = 0;
+          }
         }
 
         if (summaryColIndex >= 0) {
           newRow[summaryColIndex] = computeStudentTotalScore(newRow);
-        }
-
-        // Persist fingerprint for extra student
-        const extraFp = options.studentFingerprints?.[cleanExtraId];
-        if (extraFp && extraFp.toLowerCase() !== 'unknown') {
-          newRow[fpColIndex] = extraFp;
         }
 
         grid.splice(footerInsertIdx, 0, newRow);
@@ -1133,25 +1111,16 @@ export function buildPatchedXlsxBuffer(
         ? appendColIdx + 1
         : freshParsed.nextAttendanceColIndex
       : -1;
-    const lastReqBeforeFp = Math.max(appendColIdx, summaryColIdx, freshParsed.nextAttendanceColIndex - 1);
-    const fpColIdx = Math.max(
-      DEFAULT_FINGERPRINT_COL_INDEX,
-      courseMeta.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX,
-      lastReqBeforeFp >= DEFAULT_FINGERPRINT_COL_INDEX
-        ? lastReqBeforeFp + 5
-        : DEFAULT_FINGERPRINT_COL_INDEX
-    );
 
-    // Detect any legacy fingerprint or stale summary columns in the original grid that were cleared
+    // Detect any legacy fingerprint (e.g. Z or AL) or stale summary columns in the original grid that were cleared
     const clearedCols: number[] = [];
     const origHeaderRow = freshParsed.rawGrid[headerRowIdx] || [];
-    for (let c = idColIdx + 1; c < fpColIdx; c++) {
+    for (let c = idColIdx + 1; c < origHeaderRow.length; c++) {
       const origH = String(origHeaderRow[c] ?? '').trim();
       if (
         (isFingerprintHeader(origH) || isSummaryHeader(origH)) &&
         c !== appendColIdx &&
-        c !== summaryColIdx &&
-        c !== fpColIdx
+        c !== summaryColIdx
       ) {
         clearedCols.push(c);
       }
@@ -1259,8 +1228,7 @@ export function buildPatchedXlsxBuffer(
         if (
           !hasExistingValue ||
           c0 === appendColIdx ||
-          c0 === summaryColIdx ||
-          c0 === fpColIdx
+          c0 === summaryColIdx
         ) {
           const cellXml = buildCellXml(r0, c0, val, rowStyle);
           rowXml = upsertCellInRowXml(rowXml, cellRef, cellXml);

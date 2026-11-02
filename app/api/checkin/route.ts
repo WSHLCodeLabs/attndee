@@ -317,77 +317,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // VALIDATION 5: Cross-Browser & Column Z Fingerprint Anti-Cheat
-    const rawForwarded = request.headers.get('x-forwarded-for');
-    const clientIp = rawForwarded
-      ? rawForwarded.split(',')[0].trim()
-      : request.headers.get('x-real-ip') || 'unknown';
-
-    if (!is_manual_override) {
-      const rosterStudents = mem.roster_students;
-
-      if (device_fingerprint && device_fingerprint !== 'unknown') {
-        // Check 1: Is this hardware fingerprint bound to a DIFFERENT student in the .xlsx roster?
-        const boundToOther = rosterStudents.find(
-          (s) =>
-            String(s.student_id).trim() !== cleanStudentId &&
-            s.device_fingerprint &&
-            s.device_fingerprint.toLowerCase() !== 'unknown' &&
-            s.device_fingerprint === device_fingerprint
-        );
-
-        if (boundToOther) {
-          return NextResponse.json(
-            {
-              error: `Anti-Cheat Alert: อุปกรณ์นี้ผูกอยู่กับรหัสนิสิต ${boundToOther.student_id} ในไฟล์รายชื่อวิชาแล้ว ไม่สามารถใช้เช็คชื่อแทนกันได้`,
-              code: 'DEVICE_ALREADY_USED',
-            },
-            { status: 403 }
-          );
-        }
-
-        // Check 2: Does this student ID already have a DIFFERENT device fingerprint bound in the .xlsx roster?
-        const currentRosterStudent = rosterStudents.find(
-          (s) => String(s.student_id).trim() === cleanStudentId
-        );
-
-        if (
-          currentRosterStudent?.device_fingerprint &&
-          currentRosterStudent.device_fingerprint.toLowerCase() !== 'unknown' &&
-          currentRosterStudent.device_fingerprint !== device_fingerprint
-        ) {
-          return NextResponse.json(
-            {
-              error: `Anti-Cheat Alert: รหัสนิสิต ${cleanStudentId} ได้ผูกกับอุปกรณ์เครื่องอื่นไว้ในใบรายชื่อวิชาแล้ว กรุณาใช้อุปกรณ์ประจำตัวของท่าน`,
-              code: 'DEVICE_ALREADY_USED',
-            },
-            { status: 403 }
-          );
-        }
-      }
-
-      // Check 3: Same-session device check-in registry
-      for (const record of mem.device_checkins) {
-        if (String(record.student_id).trim() === cleanStudentId) continue;
-
-        const hasValidFingerprint =
-          device_fingerprint &&
-          device_fingerprint !== 'unknown' &&
-          record.fingerprint &&
-          record.fingerprint !== 'unknown';
-
-        if (hasValidFingerprint && record.fingerprint === device_fingerprint) {
-          return NextResponse.json(
-            {
-              error: `Anti-Cheat Alert: อุปกรณ์นี้ได้ทำการเช็คชื่อให้นิสิตคนอื่น (${record.student_id}) ในคาบเรียนนี้ไปแล้ว`,
-              code: 'DEVICE_ALREADY_USED',
-            },
-            { status: 403 }
-          );
-        }
-      }
-    }
-
     // Insert attendance record into Supabase
     const { error: insertError } = await supabase
       .from('attendance')
@@ -414,20 +343,6 @@ export async function POST(request: NextRequest) {
 
     // Mark as checked-in in memory for instant duplicate rejection
     mem.checked_in_student_ids.add(cleanStudentId);
-
-    // Record device fingerprint in runtime memory for Column Z export & anti-cheat
-    if (device_fingerprint && device_fingerprint !== 'unknown' && !is_manual_override) {
-      mem.student_fingerprints[cleanStudentId] = device_fingerprint;
-      mem.device_checkins.push({
-        fingerprint: device_fingerprint,
-        student_id: cleanStudentId,
-        student_name: `${first_name} ${last_name}`.trim(),
-        ip: clientIp,
-        lat: student_lat ?? 0,
-        long: student_long ?? 0,
-        timestamp: new Date().toISOString(),
-      });
-    }
 
     return NextResponse.json(
       {
