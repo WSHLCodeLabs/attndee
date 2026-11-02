@@ -619,15 +619,9 @@ export function parseRosterGrid(
       continue;
     }
 
-    // Validation: KU student IDs are 8-12 digits. Generic files accept alphanumeric IDs.
-    if (isKuFormat) {
-      if (!/^\d{7,13}$/.test(studentId)) {
-        continue;
-      }
-    } else {
-      if (!/^[A-Za-z0-9_-]{4,25}$/.test(studentId)) {
-        continue;
-      }
+    // Validation: Accept 5-15 digit student IDs (KU & standard universities) as well as alphanumeric IDs (e.g. B6612345)
+    if (!/^(?:\d{5,15}|[A-Za-z0-9_-]{4,25})$/.test(studentId)) {
+      continue;
     }
 
     const nameTh = String(row[nameThColIndex] ?? '').trim();
@@ -1316,10 +1310,11 @@ export function buildPatchedXlsxBuffer(
 }
 
 /**
- * Build a standard KU/Attndee 0-based initial spreadsheet grid for rooms created
+ * Build a universal 0-based initial spreadsheet grid for rooms created
  * from scratch (Guest or without an uploaded .xlsx file).
- * Uses the exact same B..K column layout (header at row index 6 = Excel Row 7)
- * so that exported .xlsx files can be re-uploaded or saved to Cloud for future sessions!
+ * Uses only the universal columns we actually have (ลำดับที่, รหัสนิสิต, ชื่อ-นามสกุล)
+ * without any university name or empty KU-specific columns, so any instructor at any
+ * university can use it and re-upload it for subsequent sessions!
  */
 export function buildStandardInitialRosterGrid(
   roomName: string,
@@ -1331,24 +1326,16 @@ export function buildStandardInitialRosterGrid(
 
   const rawGrid: any[][] = [
     [], // Row 1 (0)
-    ['', 'รายงานแสดงจำนวนนิสิต จำแนกตามหมู่เรียน'], // Row 2 (1)
-    ['', 'มหาวิทยาลัยเกษตรศาสตร์'], // Row 3 (2)
-    ['', 'ชื่อวิชา', roomName || 'ห้องเช็คชื่อ'], // Row 4 (3)
-    [], // Row 5 (4)
-    ['', 'รายชื่อนิสิต', '', `สรุปทั้งหมด ${sortedStudents.length} คน`], // Row 6 (5)
+    ['', 'รายงานการเช็คชื่อของนิสิต'], // Row 2 (1) - Universal Report Title
+    ['', 'ชื่อวิชา', roomName || 'ห้องเช็คชื่อ'], // Row 3 (2) - Course Name
+    [], // Row 4 (3)
+    ['', 'รายชื่อนิสิต', '', `สรุปทั้งหมด ${sortedStudents.length} คน`], // Row 5 (4)
     [
       '',
       'ลำดับที่',
       'รหัสนิสิต',
       'ชื่อ-นามสกุล',
-      'ชื่อ-นามสกุล',
-      'คณะ/หน่วยงานที่เทียบเท่า',
-      'สาขาวิชา',
-      'รหัสสาขา',
-      'สถานะ',
-      'Email Google',
-      'Email Office365',
-    ], // Row 7 (6) - Standard Header Row
+    ], // Row 6 (5) - Clean Universal Table Header Row
   ];
 
   sortedStudents.forEach((s, idx) => {
@@ -1361,13 +1348,6 @@ export function buildStandardInitialRosterGrid(
       idx + 1,
       cleanId,
       fullName,
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
     ]);
   });
 
@@ -1375,14 +1355,12 @@ export function buildStandardInitialRosterGrid(
   rawGrid.push(['', `วันเวลาที่พิมพ์รายงาน ${new Date().toLocaleString('th-TH')}`]);
 
   const courseMeta: CourseMetadata = {
-    is_ku_format: true,
+    is_ku_format: false,
     course_name: roomName,
     full_title: roomName,
-    header_row_index: 6,
+    header_row_index: 5,
     id_col_index: 2,
     name_th_col_index: 3,
-    name_en_col_index: 4,
-    status_col_index: 8,
   };
 
   return {
@@ -1394,7 +1372,7 @@ export function buildStandardInitialRosterGrid(
 
 /**
  * Generate the updated XLSX workbook as a Blob (preserving binary KU layout when base64 is available,
- * or generating a styled TH SarabunPSK + bordered standard KU workbook when created from scratch)
+ * or generating a styled TH SarabunPSK + bordered universal workbook when created from scratch)
  */
 export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
   const base64Source = options.xlsxBase64;
@@ -1410,7 +1388,7 @@ export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
     }
   }
 
-  // 2. Standard KU/Attndee styled .xlsx generator when created from scratch (Guest / New Class)
+  // 2. Universal styled .xlsx generator when created from scratch (Guest / New Class)
   let grid = buildUpdatedXlsxGrid(options);
   if (
     grid.length > 0 &&
@@ -1422,23 +1400,24 @@ export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
     ];
   }
 
+  const headerRowIdx = options.courseMeta?.header_row_index ?? 5;
+  const maxTableColIdx = Math.max(
+    (grid[headerRowIdx]?.length ?? 6) - 1,
+    3
+  );
+
   const worksheet = XLSX.utils.aoa_to_sheet(grid);
-  worksheet['!cols'] = [
-    { wch: 2 },
-    { wch: 8 },
-    { wch: 14 },
-    { wch: 26 },
-    { wch: 24 },
-    { wch: 24 },
-    { wch: 20 },
-    { wch: 10 },
-    { wch: 10 },
-    { wch: 22 },
-    { wch: 22 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 14 },
+  const colWidths: { wch: number }[] = [
+    { wch: 3 },  // A (Margin)
+    { wch: 12 }, // B (ลำดับที่ / หัวข้อ)
+    { wch: 16 }, // C (รหัสนิสิต)
+    { wch: 30 }, // D (ชื่อ-นามสกุล)
   ];
+  for (let c = 4; c <= maxTableColIdx + 2; c++) {
+    colWidths.push({ wch: 14 });
+  }
+  worksheet['!cols'] = colWidths;
+
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet 1');
   const outBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
@@ -1503,14 +1482,9 @@ export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
                   : new Uint8Array(sheetEntry.content)
               );
 
-        const headerRowIdx = options.courseMeta?.header_row_index ?? 6;
         const headerExcelRow = headerRowIdx + 1;
-        const maxTableColIdx = Math.max(
-          (grid[headerRowIdx]?.length ?? 12) - 1,
-          10
-        );
 
-        // Style title rows (rows 2..6) with bold TH SarabunPSK (s="1")
+        // Style title rows (rows 2..headerExcelRow-1) with bold TH SarabunPSK (s="1")
         for (let r = 2; r < headerExcelRow; r++) {
           const rRegex = new RegExp(`<row\\s+r="${r}"[^>]*>[\\s\\S]*?<\\/row>`);
           sheetXml = sheetXml.replace(rRegex, (rowBlock) =>
@@ -1518,26 +1492,35 @@ export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
           );
         }
 
-        // Style table header row (Excel Row 7) with bordered bold center style (s="2")
+        // Style table header row with bordered bold center style (s="2")
         const hRegex = new RegExp(`<row\\s+r="${headerExcelRow}"[^>]*>[\\s\\S]*?<\\/row>`);
         sheetXml = sheetXml.replace(hRegex, (rowBlock) =>
           rowBlock.replace(/<c\s+r="([A-Z]+\d+)"/g, '<c r="$1" s="2"')
         );
 
-        // Style student rows (Excel Row 8+ before footer) with bordered cells (s="4" center or s="3" left for names)
+        // Style student rows and footer row
         for (let r0 = headerRowIdx + 1; r0 < grid.length; r0++) {
           const rStr = (grid[r0] || []).map((c) => String(c ?? '')).join(' ');
-          if (rStr.includes('วันเวลาที่พิมพ์รายงาน') || !String(grid[r0]?.[2] ?? '').trim()) {
-            continue;
-          }
           const excelR = r0 + 1;
           const sRegex = new RegExp(`<row\\s+r="${excelR}"[^>]*>[\\s\\S]*?<\\/row>`);
+
+          if (rStr.includes('วันเวลาที่พิมพ์รายงาน')) {
+            sheetXml = sheetXml.replace(sRegex, (rowBlock) =>
+              rowBlock.replace(/<c\s+r="([A-Z]+\d+)"/g, '<c r="$1" s="1"')
+            );
+            continue;
+          }
+
+          if (!String(grid[r0]?.[2] ?? '').trim()) {
+            continue;
+          }
+
           sheetXml = sheetXml.replace(sRegex, (rowBlock) => {
             let updatedBlock = rowBlock;
             for (let c0 = 1; c0 <= maxTableColIdx; c0++) {
               const colLet = getColumnLetter(c0);
               const ref = `${colLet}${excelR}`;
-              const styleId = c0 === 3 || c0 === 4 || c0 === 5 || c0 === 6 || c0 === 9 || c0 === 10 ? '3' : '4';
+              const styleId = c0 === 3 ? '3' : '4';
               const cRegex = new RegExp(`<c\\s+r="${ref}"([^/>]*)(/>|>[\\s\\S]*?<\\/c>)`);
               if (cRegex.test(updatedBlock)) {
                 updatedBlock = updatedBlock.replace(cRegex, `<c r="${ref}" s="${styleId}"$1$2`);
