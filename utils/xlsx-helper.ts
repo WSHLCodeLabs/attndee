@@ -79,6 +79,7 @@ export interface ExportXlsxOptions {
   lateScore?: number; // e.g. 0.5 (default), numeric score for late check-in
   studentFingerprints?: Record<string, string>; // map of student_id -> device_fingerprint
   includeSummaryColumn?: boolean; // when true (local download), appends 'รวม' total column at the end of attendance columns
+  appendNewAttendanceColumn?: boolean; // default true; when false, only appends 'รวม' summary column over existing attendance columns
 }
 
 /**
@@ -745,6 +746,7 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
     dateLabel,
     lateScore = 0.5,
     includeSummaryColumn = false,
+    appendNewAttendanceColumn = true,
   } = options;
 
   if (!xlsxData || !Array.isArray(xlsxData) || xlsxData.length === 0) {
@@ -848,11 +850,15 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
       lastNonEmptyBeforeFp = c;
     }
   }
-  const appendColIndex = lastNonEmptyBeforeFp + 1;
-  const summaryColIndex = includeSummaryColumn ? appendColIndex + 1 : -1;
+  const appendColIndex = appendNewAttendanceColumn ? lastNonEmptyBeforeFp + 1 : -1;
+  const summaryColIndex = includeSummaryColumn
+    ? appendColIndex >= 0
+      ? appendColIndex + 1
+      : lastNonEmptyBeforeFp + 1
+    : -1;
 
   // If the table ever grows to reach or exceed fpColIndex, shift fpColIndex further right
-  const lastRequiredBeforeFp = summaryColIndex >= 0 ? summaryColIndex : appendColIndex;
+  const lastRequiredBeforeFp = Math.max(appendColIndex, summaryColIndex, lastNonEmptyBeforeFp);
   if (lastRequiredBeforeFp >= fpColIndex) {
     fpColIndex = lastRequiredBeforeFp + 5;
   }
@@ -874,15 +880,18 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
 
   // Write column header label (e.g., '14/10/2569' or custom dateLabel), optional 'รวม', and 'Fingerprint' at AL
   const todayLabel = dateLabel || new Date().toLocaleDateString('th-TH');
-  grid[headerRowIndex][appendColIndex] = todayLabel;
+  if (appendColIndex >= 0) {
+    grid[headerRowIndex][appendColIndex] = todayLabel;
+  }
   if (summaryColIndex >= 0) {
     grid[headerRowIndex][summaryColIndex] = 'รวม';
   }
   grid[headerRowIndex][fpColIndex] = 'Fingerprint';
 
-  // Identify all attendance date columns (up to and including appendColIndex) for summing into 'รวม'
+  // Identify all attendance date columns (up to and including appendColIndex or lastNonEmptyBeforeFp) for summing into 'รวม'
+  const maxAttScanCol = appendColIndex >= 0 ? appendColIndex : lastNonEmptyBeforeFp;
   const attendanceColIndices: number[] = [];
-  for (let c = idColIndex + 1; c <= appendColIndex; c++) {
+  for (let c = idColIndex + 1; c <= maxAttScanCol; c++) {
     if (c === appendColIndex) {
       attendanceColIndices.push(c);
       continue;
@@ -965,14 +974,16 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
     }
 
     // Assign numeric attendance score (number, NOT string, so Excel SUM works!)
-    if (checkedInSet.has(studentId)) {
-      if (lateSet.has(studentId) && lateScore !== undefined) {
-        row[appendColIndex] = Number(lateScore);
+    if (appendColIndex >= 0) {
+      if (checkedInSet.has(studentId)) {
+        if (lateSet.has(studentId) && lateScore !== undefined) {
+          row[appendColIndex] = Number(lateScore);
+        } else {
+          row[appendColIndex] = 1;
+        }
       } else {
-        row[appendColIndex] = 1;
+        row[appendColIndex] = 0;
       }
-    } else {
-      row[appendColIndex] = 0;
     }
 
     // Write total attendance score in 'รวม' column when requested
@@ -1115,13 +1126,19 @@ export function buildPatchedXlsxBuffer(
 
     const headerRowIdx = courseMeta.header_row_index ?? 6; // 0-based
     const idColIdx = courseMeta.id_col_index ?? 2;
-    const appendColIdx = freshParsed.nextAttendanceColIndex;
-    const summaryColIdx = options.includeSummaryColumn ? appendColIdx + 1 : -1;
+    const shouldAppendDate = options.appendNewAttendanceColumn !== false;
+    const appendColIdx = shouldAppendDate ? freshParsed.nextAttendanceColIndex : -1;
+    const summaryColIdx = options.includeSummaryColumn
+      ? shouldAppendDate
+        ? appendColIdx + 1
+        : freshParsed.nextAttendanceColIndex
+      : -1;
+    const lastReqBeforeFp = Math.max(appendColIdx, summaryColIdx, freshParsed.nextAttendanceColIndex - 1);
     const fpColIdx = Math.max(
       DEFAULT_FINGERPRINT_COL_INDEX,
       courseMeta.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX,
-      (summaryColIdx >= 0 ? summaryColIdx : appendColIdx) >= DEFAULT_FINGERPRINT_COL_INDEX
-        ? (summaryColIdx >= 0 ? summaryColIdx : appendColIdx) + 5
+      lastReqBeforeFp >= DEFAULT_FINGERPRINT_COL_INDEX
+        ? lastReqBeforeFp + 5
         : DEFAULT_FINGERPRINT_COL_INDEX
     );
 
@@ -1271,7 +1288,10 @@ export function buildPatchedXlsxBuffer(
     // Ensure the attendance and summary column(s) have a clean readable width in <cols> (e.g. width="13.5")
     // without creating overlapping min/max ranges
     if (xml.includes('</cols>')) {
-      const target1BasedCols: number[] = [appendColIdx + 1];
+      const target1BasedCols: number[] = [];
+      if (appendColIdx >= 0) {
+        target1BasedCols.push(appendColIdx + 1);
+      }
       if (summaryColIdx >= 0) {
         target1BasedCols.push(summaryColIdx + 1);
       }
@@ -1408,4 +1428,25 @@ export function downloadUpdatedXlsx(options: ExportXlsxOptions): void {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/**
+ * Download an existing .xlsx buffer (e.g., from the Cloud file list on the homepage)
+ * with the 'รวม' summary column automatically appended after all existing attendance columns
+ * and 'Fingerprint' at Column AL (37), without adding a new blank attendance date column.
+ */
+export function downloadExistingXlsxWithSummary(buffer: ArrayBuffer, filename: string): void {
+  if (typeof window === 'undefined') return;
+
+  const parsed = parseSpreadsheetBuffer(buffer, 'array');
+  downloadUpdatedXlsx({
+    xlsxData: parsed.rawGrid,
+    xlsxBase64: parsed.xlsxBase64,
+    courseMeta: parsed.courseMeta,
+    idColumn: parsed.selectedIdColumn,
+    checkedInIds: [],
+    filename: filename || 'roster_summary.xlsx',
+    includeSummaryColumn: true,
+    appendNewAttendanceColumn: false,
+  });
 }

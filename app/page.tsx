@@ -13,12 +13,14 @@ import {
   X,
   Trash2,
   Loader2,
+  Download,
 } from 'lucide-react';
 import { supabase, TeacherCloudFile } from '@/utils/supabase';
 import {
   parseSpreadsheetBuffer,
   parseRosterGrid,
   ParsedRosterResult,
+  downloadExistingXlsxWithSummary,
 } from '@/utils/xlsx-helper';
 import {
   listTeacherCloudFiles,
@@ -79,6 +81,7 @@ export default function HomePage() {
   const [cloudFiles, setCloudFiles] = useState<TeacherCloudFile[]>([]);
   const [isLoadingCloud, setIsLoadingCloud] = useState(false);
   const [loadingCloudFileId, setLoadingCloudFileId] = useState<string | null>(null);
+  const [exportingCloudFileId, setExportingCloudFileId] = useState<string | null>(null);
   const [deletingCloudFileId, setDeletingCloudFileId] = useState<string | null>(null);
   const [activeCloudFileId, setActiveCloudFileId] = useState<string | null>(null);
 
@@ -314,6 +317,26 @@ export default function HomePage() {
       );
     } finally {
       setLoadingCloudFileId(null);
+    }
+  };
+
+  const handleExportCloudFile = async (
+    e: React.MouseEvent,
+    cloudFile: TeacherCloudFile
+  ) => {
+    e.stopPropagation();
+    setError(null);
+    setExportingCloudFileId(cloudFile.id);
+    try {
+      const downloadedFile = await downloadTeacherCloudFile(cloudFile);
+      const buffer = await downloadedFile.arrayBuffer();
+      downloadExistingXlsxWithSummary(buffer, cloudFile.filename);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'ไม่สามารถดาวน์โหลดไฟล์จาก Cloud ได้'
+      );
+    } finally {
+      setExportingCloudFileId(null);
     }
   };
 
@@ -818,6 +841,7 @@ export default function HomePage() {
                 ) : (
                   cloudFiles.map((file) => {
                     const isDownloadingThis = loadingCloudFileId === file.id;
+                    const isExportingThis = exportingCloudFileId === file.id;
                     const isDeletingThis = deletingCloudFileId === file.id;
                     const updatedDateStr = new Date(file.updated_at).toLocaleString('th-TH', {
                       dateStyle: 'short',
@@ -828,7 +852,7 @@ export default function HomePage() {
                       <div
                         key={file.id}
                         onClick={() => {
-                          if (!isDownloadingThis && !isDeletingThis) {
+                          if (!isDownloadingThis && !isExportingThis && !isDeletingThis) {
                             handleSelectCloudFile(file);
                           }
                         }}
@@ -845,10 +869,23 @@ export default function HomePage() {
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          <span className="hidden sm:inline-block text-xs text-gray-400">
+                        <div className="flex items-center gap-2 sm:gap-2.5 flex-shrink-0">
+                          <span className="hidden sm:inline-block text-xs text-gray-400 mr-1">
                             {isDownloadingThis ? 'กำลังโหลด...' : updatedDateStr}
                           </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleExportCloudFile(e, file)}
+                            disabled={isExportingThis}
+                            className="p-1.5 text-gray-500 hover:text-[#0051fc] hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                            title="ดาวน์โหลดไฟล์ .xlsx (พร้อมคอลัมน์รวมคะแนน)"
+                          >
+                            {isExportingThis ? (
+                              <Loader2 size={15} className="animate-spin text-[#0051fc]" />
+                            ) : (
+                              <Download size={15} />
+                            )}
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => handleDeleteCloudFile(e, file)}
