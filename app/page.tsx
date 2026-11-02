@@ -11,12 +11,7 @@ import dynamic from 'next/dynamic';
 import {
   MapPin,
   X,
-  Cloud,
-  FileSpreadsheet,
   Trash2,
-  Upload,
-  LogOut,
-  CheckCircle2,
   Loader2,
 } from 'lucide-react';
 import { supabase, TeacherCloudFile } from '@/utils/supabase';
@@ -83,7 +78,6 @@ export default function HomePage() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [cloudFiles, setCloudFiles] = useState<TeacherCloudFile[]>([]);
   const [isLoadingCloud, setIsLoadingCloud] = useState(false);
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [loadingCloudFileId, setLoadingCloudFileId] = useState<string | null>(null);
   const [deletingCloudFileId, setDeletingCloudFileId] = useState<string | null>(null);
   const [activeCloudFileId, setActiveCloudFileId] = useState<string | null>(null);
@@ -281,7 +275,6 @@ export default function HomePage() {
 
         // Automatically back up to Teacher's Cloud Storage if logged in & uploaded from local device
         if (teacherUser && !options?.skipCloudUpload) {
-          setIsSyncingCloud(true);
           try {
             const savedCloud = await upsertTeacherCloudFile({
               fileBlob: file,
@@ -295,8 +288,6 @@ export default function HomePage() {
             }
           } catch (cloudErr) {
             console.warn('Cloud auto-backup warning:', cloudErr);
-          } finally {
-            setIsSyncingCloud(false);
           }
         }
       } catch {

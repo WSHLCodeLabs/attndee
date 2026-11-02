@@ -76,18 +76,29 @@ export async function upsertTeacherCloudFile(params: {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
 
-  const storagePath = existing?.storage_path || `${teacherId}/${fileId}.xlsx`;
+  // Generate a versioned storage path on every save to completely bust browser & CDN caches
+  const previousStoragePath = existing?.storage_path;
+  const storagePath = `${teacherId}/${fileId}_${Date.now()}.xlsx`;
 
-  // 2. Upload binary .xlsx to private Supabase Storage bucket (upsert = true)
+  // 2. Upload binary .xlsx to private Supabase Storage bucket
   const { error: uploadError } = await supabase.storage
     .from(TEACHER_ROSTERS_BUCKET)
     .upload(storagePath, params.fileBlob, {
       upsert: true,
+      cacheControl: '0',
       contentType: XLSX_MIME_TYPE,
     });
 
   if (uploadError) {
     throw new Error(`ไม่สามารถอัปโหลดไฟล์ขึ้น Cloud ได้: ${uploadError.message}`);
+  }
+
+  // Remove previous storage object version if overwritten
+  if (previousStoragePath && previousStoragePath !== storagePath) {
+    await supabase.storage
+      .from(TEACHER_ROSTERS_BUCKET)
+      .remove([previousStoragePath])
+      .catch(() => {});
   }
 
   // 3. Upsert metadata row in public.teacher_cloud_files
