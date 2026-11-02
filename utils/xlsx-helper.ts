@@ -999,7 +999,7 @@ export function buildPatchedXlsxBuffer(
 
     // Helper to upsert a <c r="X#"> cell inside a <row ...>...</row> XML block
     const upsertCellInRowXml = (rowXml: string, cellRef: string, newCellXml: string): string => {
-      const cellRegex = new RegExp(`<c\\s+r="${cellRef}"[^>]*(?:/>|>[\\s\\S]*?<\\/c>)`);
+      const cellRegex = new RegExp(`<c\\s+r="${cellRef}"[^/>]*(?:/>|>[\\s\\S]*?<\\/c>)`);
       if (cellRegex.test(rowXml)) {
         return rowXml.replace(cellRegex, newCellXml);
       }
@@ -1013,7 +1013,7 @@ export function buildPatchedXlsxBuffer(
       return rowXml.replace(
         /^(<row\b[^>]*>)([\s\S]*?)(<\/row>)$/,
         (full, openTag, inner, closeTag) => {
-          const cellRegex = /<c\b[^>]*\br="([A-Z]+)\d+"[^>]*(?:\/>|>[\s\S]*?<\/c>)/g;
+          const cellRegex = /<c\b[^/>]*\br="([A-Z]+)\d+"[^/>]*(?:\/>|>[\s\S]*?<\/c>)/g;
           const cells: { colIdx: number; xml: string }[] = [];
           let m: RegExpExecArray | null;
           while ((m = cellRegex.exec(inner)) !== null) {
@@ -1064,7 +1064,7 @@ export function buildPatchedXlsxBuffer(
         if (val === '' || val === undefined || val === null) continue;
 
         const cellRef = `${getColumnLetter(c0)}${excelRowNum}`;
-        const existingCellRegex = new RegExp(`<c\\s+r="${cellRef}"[^>]*(?:/>|>[\\s\\S]*?<\\/c>)`);
+        const existingCellRegex = new RegExp(`<c\\s+r="${cellRef}"[^/>]*(?:/>|>[\\s\\S]*?<\\/c>)`);
         const existingMatch = rowXml.match(existingCellRegex);
         // Note: Excel often saves empty formatted cells as self-closing <c r="M7" s="7"/> without <v> or <is>.
         // Treat any cell without <v> or <is> as empty so attendance scores are always written!
