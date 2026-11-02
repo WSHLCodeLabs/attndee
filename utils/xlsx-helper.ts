@@ -9,7 +9,44 @@
 import * as XLSX from 'xlsx';
 import { KURosterStudent, CourseMetadata } from '@/utils/supabase';
 
-export const DEFAULT_FINGERPRINT_COL_INDEX = 25; // Column Z
+export const DEFAULT_FINGERPRINT_COL_INDEX = 37; // Column AL
+export const LEGACY_FINGERPRINT_COL_INDEX = 25; // Legacy Column Z
+
+export function isFingerprintHeader(val: string): boolean {
+  return /^(fingerprint|attndee_fp|device_fp)$/i.test(String(val ?? '').trim());
+}
+
+export function isSummaryHeader(val: string): boolean {
+  return /^(รวม|รวมคะแนน|รวม\s*\(.*\)|คะแนนรวม|total|sum)$/i.test(String(val ?? '').trim());
+}
+
+export function isStudentMetadataHeader(val: string): boolean {
+  const v = String(val ?? '').trim().toLowerCase();
+  if (!v) return false;
+  return (
+    v.includes('ลำดับ') ||
+    v === 'seq' ||
+    v === 'no' ||
+    v === 'no.' ||
+    v.includes('รหัส') ||
+    v.includes('student') ||
+    v === 'id' ||
+    v.includes('ชื่อ') ||
+    v.includes('name') ||
+    v.includes('คณะ') ||
+    v.includes('faculty') ||
+    v.includes('สาขา') ||
+    v.includes('major') ||
+    v.includes('สถานะ') ||
+    v.includes('status') ||
+    v.includes('email') ||
+    v.includes('google') ||
+    v.includes('office') ||
+    v.includes('365') ||
+    v.includes('live') ||
+    v.includes('ku.th')
+  );
+}
 
 export interface ParsedRosterResult {
   isKuFormat: boolean;
@@ -41,6 +78,7 @@ export interface ExportXlsxOptions {
   dateLabel?: string;
   lateScore?: number; // e.g. 0.5 (default), numeric score for late check-in
   studentFingerprints?: Record<string, string>; // map of student_id -> device_fingerprint
+  includeSummaryColumn?: boolean; // when true (local download), appends 'รวม' total column at the end of attendance columns
 }
 
 /**
@@ -393,6 +431,7 @@ export function parseRosterGrid(
   let emailGoogleColIndex: number | undefined;
   let emailOffice365ColIndex: number | undefined;
   let fingerprintColIndex: number = DEFAULT_FINGERPRINT_COL_INDEX;
+  let sourceFpColIndex: number = -1;
 
   for (let r = 0; r < Math.min(rawGrid.length, 20); r++) {
     const row = rawGrid[r];
@@ -473,26 +512,31 @@ export function parseRosterGrid(
         emailOffice365ColIndex = c;
       }
 
-      // Fingerprint column
-      if (/^(fingerprint|attndee_fp|device_fp)$/i.test(val)) {
-        fingerprintColIndex = c;
+      // Fingerprint column (may exist at legacy Z=25 or AL=37)
+      if (isFingerprintHeader(val)) {
+        sourceFpColIndex = c;
+        fingerprintColIndex = Math.max(DEFAULT_FINGERPRINT_COL_INDEX, c);
       }
     }
   }
 
-  // If not explicitly detected in header, check if column index 25 (Column Z) contains 16-char hex strings
-  if (fingerprintColIndex === DEFAULT_FINGERPRINT_COL_INDEX) {
-    let hexCount = 0;
+  // If not explicitly detected in header, check if column AL (37) or legacy Z (25) contains 12-32 char hex strings
+  if (sourceFpColIndex < 0) {
     const startScan = headerRowIndex >= 0 ? headerRowIndex + 1 : 0;
     const endScan = Math.min(rawGrid.length, startScan + 30);
-    for (let r = startScan; r < endScan; r++) {
-      const cell = String(rawGrid[r]?.[DEFAULT_FINGERPRINT_COL_INDEX] ?? '').trim();
-      if (/^[0-9a-f]{12,32}$/i.test(cell)) {
-        hexCount++;
+    for (const candidateCol of [DEFAULT_FINGERPRINT_COL_INDEX, LEGACY_FINGERPRINT_COL_INDEX]) {
+      let hexCount = 0;
+      for (let r = startScan; r < endScan; r++) {
+        const cell = String(rawGrid[r]?.[candidateCol] ?? '').trim();
+        if (/^[0-9a-f]{12,32}$/i.test(cell)) {
+          hexCount++;
+        }
       }
-    }
-    if (hexCount > 0) {
-      fingerprintColIndex = DEFAULT_FINGERPRINT_COL_INDEX;
+      if (hexCount > 0) {
+        sourceFpColIndex = candidateCol;
+        fingerprintColIndex = Math.max(DEFAULT_FINGERPRINT_COL_INDEX, candidateCol);
+        break;
+      }
     }
   }
 
@@ -593,9 +637,10 @@ export function parseRosterGrid(
 
     const { first_name, last_name } = splitStudentName(nameTh, nameEn);
 
-    const rawFp = String(row[fingerprintColIndex] ?? '').trim();
+    const fpReadIndex = sourceFpColIndex >= 0 ? sourceFpColIndex : fingerprintColIndex;
+    const rawFp = String(row[fpReadIndex] || row[fingerprintColIndex] || '').trim();
     const deviceFingerprint =
-      rawFp && rawFp.toLowerCase() !== 'fingerprint' && rawFp.toLowerCase() !== 'unknown'
+      rawFp && !isFingerprintHeader(rawFp) && rawFp.toLowerCase() !== 'unknown'
         ? rawFp
         : undefined;
 
@@ -627,12 +672,13 @@ export function parseRosterGrid(
     suggestedRoomName = courseName.trim();
   }
 
-  // 5. Calculate Next Attendance Column (first empty column after table headers, strictly before fingerprintColIndex)
+  // 5. Calculate Next Attendance Column (first empty column after table headers & prior dates,
+  // ignoring any legacy 'Fingerprint' column or previous 'รวม' summary column)
   const effectiveHeaderRow = Math.max(0, headerRowIndex);
   let lastNonEmptyBeforeFp = idColIndex;
   for (let c = idColIndex; c < fingerprintColIndex; c++) {
     const cellVal = String(rawGrid[effectiveHeaderRow]?.[c] ?? '').trim();
-    if (cellVal !== '') {
+    if (cellVal !== '' && !isFingerprintHeader(cellVal) && !isSummaryHeader(cellVal)) {
       lastNonEmptyBeforeFp = c;
     }
   }
@@ -685,6 +731,8 @@ export function parseRosterGrid(
  * preserving all existing KU header rows, student rows, and footer rows.
  * Attendance scores are written as NUMERIC values: 1 for present, 0 for absent,
  * and lateScore (e.g. 0.5) for late arrivals.
+ * When options.includeSummaryColumn is true, appends a 'รวม' total column immediately
+ * after the latest attendance date column, and places 'Fingerprint' at Column AL (37).
  */
 export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
   const {
@@ -696,6 +744,7 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
     extraStudents,
     dateLabel,
     lateScore = 0.5,
+    includeSummaryColumn = false,
   } = options;
 
   if (!xlsxData || !Array.isArray(xlsxData) || xlsxData.length === 0) {
@@ -767,40 +816,100 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
     if (headerRowIndex < 0) headerRowIndex = 0;
   }
 
-  // Determine fpColIndex (default 25 = Column Z)
-  let fpColIndex = courseMeta?.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX;
-
   // Ensure header row exists
   while (grid.length <= headerRowIndex) {
     grid.push([]);
   }
 
+  // Determine target fpColIndex (minimum DEFAULT_FINGERPRINT_COL_INDEX = 37 = Column AL)
+  let fpColIndex = Math.max(
+    DEFAULT_FINGERPRINT_COL_INDEX,
+    courseMeta?.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX
+  );
+
+  // Detect any legacy fingerprint columns (< fpColIndex, e.g. Column Z = 25) or prior summary columns
+  const legacyFpCols: number[] = [];
+  const staleSummaryCols: number[] = [];
+  for (let c = idColIndex + 1; c < fpColIndex; c++) {
+    const hVal = String(grid[headerRowIndex]?.[c] ?? '').trim();
+    if (isFingerprintHeader(hVal)) {
+      legacyFpCols.push(c);
+    } else if (isSummaryHeader(hVal)) {
+      staleSummaryCols.push(c);
+    }
+  }
+
   // CRITICAL Attendance Column Placement:
-  // Find the last non-empty header column strictly before fpColIndex (e.g. after core table & prior attendance cols)
+  // Find the last non-empty header column strictly before fpColIndex, ignoring legacy Fingerprint and 'รวม' headers
   let lastNonEmptyBeforeFp = idColIndex;
   for (let c = idColIndex; c < fpColIndex; c++) {
     const cellVal = String(grid[headerRowIndex]?.[c] ?? '').trim();
-    if (cellVal !== '') {
+    if (cellVal !== '' && !isFingerprintHeader(cellVal) && !isSummaryHeader(cellVal)) {
       lastNonEmptyBeforeFp = c;
     }
   }
-  let appendColIndex = lastNonEmptyBeforeFp + 1;
+  const appendColIndex = lastNonEmptyBeforeFp + 1;
+  const summaryColIndex = includeSummaryColumn ? appendColIndex + 1 : -1;
 
   // If the table ever grows to reach or exceed fpColIndex, shift fpColIndex further right
-  if (appendColIndex >= fpColIndex) {
-    fpColIndex = appendColIndex + 5;
+  const lastRequiredBeforeFp = summaryColIndex >= 0 ? summaryColIndex : appendColIndex;
+  if (lastRequiredBeforeFp >= fpColIndex) {
+    fpColIndex = lastRequiredBeforeFp + 5;
   }
 
-  // Ensure header row has sufficient length to hold both appendColIndex and fpColIndex
-  const maxHeaderCol = Math.max(appendColIndex, fpColIndex);
+  // Clear any legacy Fingerprint or stale Summary headers that aren't being overwritten right now
+  for (const oldCol of [...legacyFpCols, ...staleSummaryCols]) {
+    if (oldCol !== appendColIndex && oldCol !== summaryColIndex && oldCol !== fpColIndex) {
+      if (grid[headerRowIndex]?.[oldCol] !== undefined) {
+        grid[headerRowIndex][oldCol] = '';
+      }
+    }
+  }
+
+  // Ensure header row has sufficient length to hold appendColIndex, summaryColIndex, and fpColIndex
+  const maxHeaderCol = Math.max(appendColIndex, summaryColIndex, fpColIndex);
   while (grid[headerRowIndex].length <= maxHeaderCol) {
     grid[headerRowIndex].push('');
   }
 
-  // Write column header label (e.g., '14/10/2569' or custom dateLabel) and Fingerprint header
+  // Write column header label (e.g., '14/10/2569' or custom dateLabel), optional 'รวม', and 'Fingerprint' at AL
   const todayLabel = dateLabel || new Date().toLocaleDateString('th-TH');
   grid[headerRowIndex][appendColIndex] = todayLabel;
+  if (summaryColIndex >= 0) {
+    grid[headerRowIndex][summaryColIndex] = 'รวม';
+  }
   grid[headerRowIndex][fpColIndex] = 'Fingerprint';
+
+  // Identify all attendance date columns (up to and including appendColIndex) for summing into 'รวม'
+  const attendanceColIndices: number[] = [];
+  for (let c = idColIndex + 1; c <= appendColIndex; c++) {
+    if (c === appendColIndex) {
+      attendanceColIndices.push(c);
+      continue;
+    }
+    const hVal = String(grid[headerRowIndex]?.[c] ?? '').trim();
+    if (
+      hVal !== '' &&
+      !isStudentMetadataHeader(hVal) &&
+      !isFingerprintHeader(hVal) &&
+      !isSummaryHeader(hVal)
+    ) {
+      attendanceColIndices.push(c);
+    }
+  }
+
+  // Helper to compute numeric sum across all attendance columns for a student row
+  const computeStudentTotalScore = (row: any[]): number => {
+    let sum = 0;
+    for (const attCol of attendanceColIndices) {
+      const v = row[attCol];
+      const num = typeof v === 'number' ? v : parseFloat(String(v ?? '').trim());
+      if (!Number.isNaN(num)) {
+        sum += num;
+      }
+    }
+    return Math.round(sum * 100) / 100;
+  };
 
   // Track which IDs were present in the spreadsheet
   const matchedStudentIds = new Set<string>();
@@ -832,8 +941,25 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
 
     matchedStudentIds.add(studentId);
 
-    // Ensure row has sufficient length to hold both appendColIndex and fpColIndex
-    const targetRowLength = Math.max(appendColIndex, fpColIndex) + 1;
+    // Harvest any existing fingerprint from legacy Z column before clearing it
+    let existingLegacyFp = '';
+    for (const oldFpCol of legacyFpCols) {
+      const candidate = String(row[oldFpCol] ?? '').trim();
+      if (candidate && !isFingerprintHeader(candidate) && candidate.toLowerCase() !== 'unknown') {
+        existingLegacyFp = candidate;
+      }
+      if (oldFpCol !== appendColIndex && oldFpCol !== summaryColIndex && oldFpCol !== fpColIndex) {
+        row[oldFpCol] = '';
+      }
+    }
+    for (const oldSumCol of staleSummaryCols) {
+      if (oldSumCol !== appendColIndex && oldSumCol !== summaryColIndex && oldSumCol !== fpColIndex) {
+        row[oldSumCol] = '';
+      }
+    }
+
+    // Ensure row has sufficient length to hold appendColIndex, summaryColIndex, and fpColIndex
+    const targetRowLength = Math.max(appendColIndex, summaryColIndex, fpColIndex) + 1;
     while (row.length < targetRowLength) {
       row.push('');
     }
@@ -849,9 +975,17 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
       row[appendColIndex] = 0;
     }
 
-    // Persist student device fingerprint in Column Z (fpColIndex)
-    const fp = options.studentFingerprints?.[studentId] || String(row[fpColIndex] ?? '').trim();
-    if (fp && fp.toLowerCase() !== 'unknown' && fp.toLowerCase() !== 'fingerprint') {
+    // Write total attendance score in 'รวม' column when requested
+    if (summaryColIndex >= 0) {
+      row[summaryColIndex] = computeStudentTotalScore(row);
+    }
+
+    // Persist student device fingerprint in Column AL (fpColIndex = 37)
+    const fp =
+      options.studentFingerprints?.[studentId] ||
+      String(row[fpColIndex] ?? '').trim() ||
+      existingLegacyFp;
+    if (fp && fp.toLowerCase() !== 'unknown' && !isFingerprintHeader(fp)) {
       row[fpColIndex] = fp;
     }
   }
@@ -883,7 +1017,7 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
 
       for (const extra of unlistedStudents) {
         const cleanExtraId = String(extra.student_id).trim();
-        const targetRowLength = Math.max(appendColIndex, fpColIndex) + 1;
+        const targetRowLength = Math.max(appendColIndex, summaryColIndex, fpColIndex) + 1;
         const newRow: any[] = new Array(targetRowLength).fill('');
         newRow[idColIndex] = cleanExtraId;
 
@@ -900,6 +1034,10 @@ export function buildUpdatedXlsxGrid(options: ExportXlsxOptions): any[][] {
           newRow[appendColIndex] = isLate && lateScore !== undefined ? Number(lateScore) : 1;
         } else {
           newRow[appendColIndex] = 0;
+        }
+
+        if (summaryColIndex >= 0) {
+          newRow[summaryColIndex] = computeStudentTotalScore(newRow);
         }
 
         // Persist fingerprint for extra student
@@ -977,6 +1115,30 @@ export function buildPatchedXlsxBuffer(
 
     const headerRowIdx = courseMeta.header_row_index ?? 6; // 0-based
     const idColIdx = courseMeta.id_col_index ?? 2;
+    const appendColIdx = freshParsed.nextAttendanceColIndex;
+    const summaryColIdx = options.includeSummaryColumn ? appendColIdx + 1 : -1;
+    const fpColIdx = Math.max(
+      DEFAULT_FINGERPRINT_COL_INDEX,
+      courseMeta.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX,
+      (summaryColIdx >= 0 ? summaryColIdx : appendColIdx) >= DEFAULT_FINGERPRINT_COL_INDEX
+        ? (summaryColIdx >= 0 ? summaryColIdx : appendColIdx) + 5
+        : DEFAULT_FINGERPRINT_COL_INDEX
+    );
+
+    // Detect any legacy fingerprint or stale summary columns in the original grid that were cleared
+    const clearedCols: number[] = [];
+    const origHeaderRow = freshParsed.rawGrid[headerRowIdx] || [];
+    for (let c = idColIdx + 1; c < fpColIdx; c++) {
+      const origH = String(origHeaderRow[c] ?? '').trim();
+      if (
+        (isFingerprintHeader(origH) || isSummaryHeader(origH)) &&
+        c !== appendColIdx &&
+        c !== summaryColIdx &&
+        c !== fpColIdx
+      ) {
+        clearedCols.push(c);
+      }
+    }
 
     // Identify which columns in updatedGrid need to be written into the XML
     let maxColIdx = 0;
@@ -1007,7 +1169,7 @@ export function buildPatchedXlsxBuffer(
     };
 
     // CRITICAL OOXML RULE: Microsoft Excel strictly requires <c r="..."> elements inside a <row>
-    // to appear in ascending column order (e.g. B, C, ..., K, L, M, ..., Z). If M appears after Z,
+    // to appear in ascending column order (e.g. B, C, ..., K, L, M, ..., AL). If M appears after AL,
     // Excel marks sheet1.xml as unreadable and strips the cells.
     const sortRowCellsInXml = (rowXml: string): string => {
       return rowXml.replace(
@@ -1029,8 +1191,6 @@ export function buildPatchedXlsxBuffer(
       );
     };
 
-    const fpColIdx = courseMeta.fingerprint_col_index ?? DEFAULT_FINGERPRINT_COL_INDEX;
-
     // Update each row in updatedGrid from headerRowIdx onwards
     for (let r0 = headerRowIdx; r0 < updatedGrid.length; r0++) {
       const row = updatedGrid[r0];
@@ -1042,6 +1202,15 @@ export function buildPatchedXlsxBuffer(
       if (!match) continue;
 
       let rowXml: string = match[0];
+
+      // Remove any legacy Fingerprint (e.g. Column Z) or stale Summary cells that were migrated/cleared
+      for (const clearedCol of clearedCols) {
+        if (!row[clearedCol]) {
+          const clearedRef = `${getColumnLetter(clearedCol)}${excelRowNum}`;
+          const clearedRegex = new RegExp(`<c\\s+r="${clearedRef}"[^/>]*(?:/>|>[\\s\\S]*?<\\/c>)`);
+          rowXml = rowXml.replace(clearedRegex, '');
+        }
+      }
 
       // Detect existing style index in this row so our appended cell matches existing borders & font!
       let rowStyle: string | null = null;
@@ -1070,13 +1239,18 @@ export function buildPatchedXlsxBuffer(
         // Treat any cell without <v> or <is> as empty so attendance scores are always written!
         const hasExistingValue = Boolean(existingMatch && /<(?:v|is)\b/.test(existingMatch[0]));
 
-        if (!hasExistingValue || c0 === fpColIdx) {
+        if (
+          !hasExistingValue ||
+          c0 === appendColIdx ||
+          c0 === summaryColIdx ||
+          c0 === fpColIdx
+        ) {
           const cellXml = buildCellXml(r0, c0, val, rowStyle);
           rowXml = upsertCellInRowXml(rowXml, cellRef, cellXml);
         }
       }
 
-      // Guarantee ascending column order (A..Z) inside <row> for Microsoft Excel OOXML compliance
+      // Guarantee ascending column order (A..AL) inside <row> for Microsoft Excel OOXML compliance
       rowXml = sortRowCellsInXml(rowXml);
 
       // Update spans="2:11" attribute on <row> if present so Excel knows the new width
@@ -1094,15 +1268,13 @@ export function buildPatchedXlsxBuffer(
       return `<dimension ref="${startRef}:${maxColLetter}${maxRowNum}" />`;
     });
 
-    // Ensure the attendance column(s) have a clean readable width in <cols> (e.g. width="13.5")
+    // Ensure the attendance and summary column(s) have a clean readable width in <cols> (e.g. width="13.5")
     // without creating overlapping min/max ranges
     if (xml.includes('</cols>')) {
-      let lastNonEmptyBeforeFp = idColIdx;
-      for (let c = idColIdx; c < fpColIdx; c++) {
-        const cellVal = String(updatedGrid[headerRowIdx]?.[c] ?? '').trim();
-        if (cellVal !== '') lastNonEmptyBeforeFp = c;
+      const target1BasedCols: number[] = [appendColIdx + 1];
+      if (summaryColIdx >= 0) {
+        target1BasedCols.push(summaryColIdx + 1);
       }
-      const col1Based = lastNonEmptyBeforeFp + 1;
       xml = xml.replace(/<cols>([\s\S]*?)<\/cols>/, (_full, innerCols) => {
         const colRegex = /<col\b[^>]*\bmin="(\d+)"[^>]*\bmax="(\d+)"[^>]*\/>/g;
         const parsedCols: { min: number; max: number; xml: string }[] = [];
@@ -1125,13 +1297,15 @@ export function buildPatchedXlsxBuffer(
                 (other.max - other.min > c.max - c.min || oIdx < idx)
             )
         );
-        const isCovered = cleanCols.some((c) => c.min <= col1Based && col1Based <= c.max);
-        if (!isCovered) {
-          cleanCols.push({
-            min: col1Based,
-            max: col1Based,
-            xml: `<col min="${col1Based}" max="${col1Based}" width="13.5" customWidth="1" />`,
-          });
+        for (const col1Based of target1BasedCols) {
+          const isCovered = cleanCols.some((c) => c.min <= col1Based && col1Based <= c.max);
+          if (!isCovered) {
+            cleanCols.push({
+              min: col1Based,
+              max: col1Based,
+              xml: `<col min="${col1Based}" max="${col1Based}" width="13.5" customWidth="1" />`,
+            });
+          }
         }
         cleanCols.sort((a, b) => a.min - b.min);
         return `<cols>${cleanCols.map((c) => c.xml).join('')}</cols>`;
@@ -1215,13 +1389,17 @@ export function generateUpdatedXlsxBlob(options: ExportXlsxOptions): Blob {
 }
 
 /**
- * Generate and trigger download of the updated XLSX workbook in browser environments
+ * Generate and trigger download of the updated XLSX workbook in browser environments.
+ * By default, local downloads include the 'รวม' summary column at the end of the attendance columns.
  */
 export function downloadUpdatedXlsx(options: ExportXlsxOptions): void {
   if (typeof window === 'undefined') return;
 
   const filename = options.filename || `attendance_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  const blob = generateUpdatedXlsxBlob(options);
+  const blob = generateUpdatedXlsxBlob({
+    ...options,
+    includeSummaryColumn: options.includeSummaryColumn ?? true,
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
