@@ -541,11 +541,15 @@ export default function HomePage() {
     for (let i = 0; i < visibleColumnCount; i++) {
       allCols.push(i);
     }
-    if (showDetailedColumns) return allCols;
+
+    // Permanently hide Column A (index 0) in the preview UI
+    const filteredA = allCols.filter((colIdx) => colIdx !== 0);
+
+    if (showDetailedColumns) return filteredA;
 
     // Filter out detailed / contact columns when collapsed:
     // Faculty, Major, Major Code, Status, Google Email, KU/Office365 Email
-    return allCols.filter((colIdx) => {
+    return filteredA.filter((colIdx) => {
       // Always keep ID column and attendance column
       const headerName = parsedRoster.columnHeaders[colIdx] || '';
       const isIdCol = headerName === selectedIdColumn;
@@ -577,6 +581,73 @@ export default function HomePage() {
       return !isDetailCol;
     });
   }, [parsedRoster, previewRowsWithIndex, visibleColumnCount, showDetailedColumns, selectedIdColumn]);
+
+  // Detected historical attendance date column indices (dates preceding nextAttendanceColIndex)
+  const historicalAttendanceColIndices = useMemo(() => {
+    if (!parsedRoster) return [];
+    const dateCols: number[] = [];
+    const headerRow = parsedRoster.rawGrid[parsedRoster.courseMeta.header_row_index] || [];
+    const idColIdx = parsedRoster.columnHeaders.indexOf(selectedIdColumn);
+
+    for (let c = Math.max(0, idColIdx + 1); c < parsedRoster.nextAttendanceColIndex; c++) {
+      const headerVal = String(headerRow[c] ?? '').trim();
+      // Date patterns like DD/MM/YYYY, D/M/YY or numbers with slashes/dashes
+      const isDate =
+        /\d{1,2}[/-]\d{1,2}/.test(headerVal) ||
+        (/\d+/.test(headerVal) && headerVal.length >= 4);
+
+      // Check if student cells in this column contain scores (0, 0.5, 1, etc.)
+      let hasNumericScores = false;
+      for (const student of parsedRoster.students) {
+        const val = parsedRoster.rawGrid[student.row_index]?.[c];
+        if (typeof val === 'number' || (typeof val === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(val.trim()))) {
+          hasNumericScores = true;
+          break;
+        }
+      }
+
+      if (isDate || hasNumericScores) {
+        dateCols.push(c);
+      }
+    }
+    return dateCols;
+  }, [parsedRoster, selectedIdColumn]);
+
+  // Total attended count per column (bottom sum)
+  const columnAttendanceSums = useMemo(() => {
+    if (!parsedRoster) return new Map<number, number>();
+    const sums = new Map<number, number>();
+    for (const c of historicalAttendanceColIndices) {
+      let colTotal = 0;
+      for (const student of parsedRoster.students) {
+        const rawVal = parsedRoster.rawGrid[student.row_index]?.[c];
+        const num = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal ?? '').trim());
+        if (!isNaN(num) && num > 0) {
+          colTotal += num;
+        }
+      }
+      sums.set(c, colTotal);
+    }
+    return sums;
+  }, [parsedRoster, historicalAttendanceColIndices]);
+
+  // Total attended count per student (row-level sum across historical date columns)
+  const studentTotalScores = useMemo(() => {
+    if (!parsedRoster) return new Map<number, number>();
+    const rowMap = new Map<number, number>();
+    for (const student of parsedRoster.students) {
+      let studentSum = 0;
+      for (const c of historicalAttendanceColIndices) {
+        const rawVal = parsedRoster.rawGrid[student.row_index]?.[c];
+        const num = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal ?? '').trim());
+        if (!isNaN(num) && num > 0) {
+          studentSum += num;
+        }
+      }
+      rowMap.set(student.row_index, studentSum);
+    }
+    return rowMap;
+  }, [parsedRoster, historicalAttendanceColIndices]);
 
   const renderMapBox = (roundedClass: string) => (
     <div className={`relative w-full h-full overflow-hidden bg-[#cbe6cc] ${roundedClass}`}>
@@ -1024,13 +1095,16 @@ export default function HomePage() {
                         const header = parsedRoster.columnHeaders[i] || `Col ${i + 1}`;
                         const isIdColumn = header === selectedIdColumn;
                         const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
+                        const isSeqCol = i === 1; // Column B (ลำดับที่)
                         return (
                           <th
                             key={i}
                             onClick={() => {
                               if (!isAttendanceCol) handleColumnClick(i);
                             }}
-                            className={`border-b border-r border-gray-200 px-3 py-2.5 font-semibold text-left transition-colors whitespace-nowrap ${
+                            className={`border-b border-r border-gray-200 py-2.5 font-semibold text-left transition-colors whitespace-nowrap ${
+                              isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center' : 'px-3'
+                            } ${
                               isIdColumn
                                 ? 'bg-[#0051fc] text-white cursor-pointer'
                                 : isAttendanceCol
@@ -1038,7 +1112,7 @@ export default function HomePage() {
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
                             }`}
                           >
-                            <div className="flex items-center justify-between gap-2">
+                            <div className={`flex items-center gap-2 ${isSeqCol ? 'justify-center' : 'justify-between'}`}>
                               <span>{header}</span>
                               {isIdColumn && (
                                 <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold">
@@ -1054,62 +1128,145 @@ export default function HomePage() {
                           </th>
                         );
                       })}
+
+                      {/* Sticky Right-locked Purple Summary Column */}
+                      <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-3.5 py-2.5 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] min-w-[88px]">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>รวม (ครั้ง)</span>
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {previewRowsWithIndex.map(({ row, actualRowIndex }, rowIdx) => (
-                      <tr
-                        key={actualRowIndex}
-                        className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'}
-                      >
-                        <td className="border-b border-r border-gray-200 px-2 py-2 text-center text-gray-400 font-mono text-xs w-12">
-                          {rowIdx + 1}
-                        </td>
-                        {visibleColumnIndices.map((colIdx) => {
-                          const isIdColumn =
-                            parsedRoster.columnHeaders[colIdx] === selectedIdColumn;
-                          const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
-                          const val = row[colIdx];
+                    {previewRowsWithIndex.map(({ row, actualRowIndex }, rowIdx) => {
+                      const isHeaderRow = actualRowIndex === parsedRoster.courseMeta.header_row_index;
+                      const isStudentRow = validStudentRowSet.has(actualRowIndex);
+                      const studentScore = studentTotalScores.get(actualRowIndex);
 
-                          if (isAttendanceCol) {
-                            const isHeaderRow =
-                              actualRowIndex === parsedRoster.courseMeta.header_row_index;
-                            const isStudentRow = validStudentRowSet.has(actualRowIndex);
+                      return (
+                        <tr
+                          key={actualRowIndex}
+                          className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'}
+                        >
+                          <td className="border-b border-r border-gray-200 px-2 py-2 text-center text-gray-400 font-mono text-xs w-12">
+                            {rowIdx + 1}
+                          </td>
+                          {visibleColumnIndices.map((colIdx) => {
+                            const isIdColumn =
+                              parsedRoster.columnHeaders[colIdx] === selectedIdColumn;
+                            const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
+                            const isSeqCol = colIdx === 1; // Column B (ลำดับที่)
+                            const val = row[colIdx];
 
-                            if (isHeaderRow || isStudentRow) {
+                            if (isAttendanceCol) {
+                              if (isHeaderRow || isStudentRow) {
+                                return (
+                                  <td
+                                    key={colIdx}
+                                    className="border-b border-r border-[#2bb673]/30 px-3 py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap"
+                                  >
+                                    {isHeaderRow ? todayDateLabel : '—'}
+                                  </td>
+                                );
+                              }
+
                               return (
                                 <td
                                   key={colIdx}
-                                  className="border-b border-r border-[#2bb673]/30 px-3 py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap"
-                                >
-                                  {isHeaderRow ? todayDateLabel : '—'}
-                                </td>
+                                  className="border-b border-r border-gray-200 px-3 py-2 text-gray-700"
+                                />
                               );
                             }
 
                             return (
                               <td
                                 key={colIdx}
-                                className="border-b border-r border-gray-200 px-3 py-2 text-gray-700"
-                              />
+                                className={`border-b border-r border-gray-200 py-2 text-gray-700 truncate ${
+                                  isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center font-mono' : 'px-3 max-w-[200px]'
+                                } ${
+                                  isIdColumn ? 'bg-blue-50/50 font-semibold text-black font-mono' : ''
+                                }`}
+                              >
+                                {val !== undefined && val !== null && String(val).trim() !== ''
+                                  ? String(val)
+                                  : ''}
+                              </td>
+                            );
+                          })}
+
+                          {/* Sticky Right-locked Purple Summary Cell */}
+                          <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-3 py-2 text-center font-mono font-bold whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] ${
+                            isHeaderRow
+                              ? 'bg-purple-100/80 text-purple-900 font-semibold text-xs'
+                              : isStudentRow
+                              ? 'bg-[#f5f3ff] text-[#7c3aed]'
+                              : 'bg-white text-gray-300'
+                          }`}>
+                            {isHeaderRow ? 'รวม' : isStudentRow ? (studentScore ?? 0) : ''}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {/* Bottom Column Attendance Sum Row (shows total for each date column) */}
+                    {historicalAttendanceColIndices.length > 0 && (
+                      <tr className="bg-purple-50/60 font-semibold border-t-2 border-purple-200 text-xs">
+                        <td className="border-b border-r border-purple-200 px-2 py-2.5 text-center text-purple-700 font-mono">
+                          ∑
+                        </td>
+                        {visibleColumnIndices.map((colIdx) => {
+                          const colSum = columnAttendanceSums.get(colIdx);
+                          const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
+                          const isSeqCol = colIdx === 1;
+
+                          if (colIdx === 2) {
+                            // Student ID or First descriptive column
+                            return (
+                              <td
+                                key={colIdx}
+                                className="border-b border-r border-purple-200 px-3 py-2.5 text-purple-900 font-bold"
+                              >
+                                รวมมาเรียน (คน)
+                              </td>
+                            );
+                          }
+
+                          if (colSum !== undefined) {
+                            return (
+                              <td
+                                key={colIdx}
+                                className="border-b border-r border-purple-200 px-3 py-2.5 text-center font-mono text-purple-800 font-bold bg-purple-100/50"
+                              >
+                                {colSum}
+                              </td>
+                            );
+                          }
+
+                          if (isAttendanceCol) {
+                            return (
+                              <td
+                                key={colIdx}
+                                className="border-b border-r border-purple-200 px-3 py-2.5 text-center font-mono text-gray-400"
+                              >
+                                —
+                              </td>
                             );
                           }
 
                           return (
                             <td
                               key={colIdx}
-                              className={`border-b border-r border-gray-200 px-3 py-2 text-gray-700 truncate max-w-[200px] ${
-                                isIdColumn ? 'bg-blue-50/50 font-semibold text-black font-mono' : ''
-                              }`}
-                            >
-                              {val !== undefined && val !== null && String(val).trim() !== ''
-                                ? String(val)
-                                : ''}
-                            </td>
+                              className={`border-b border-r border-purple-200 py-2.5 ${isSeqCol ? 'w-14 text-center' : 'px-3'}`}
+                            />
                           );
                         })}
+
+                        {/* Sticky Right-locked Purple Bottom Total Sum */}
+                        <td className="sticky right-0 z-10 border-b border-l border-purple-300 px-3 py-2.5 text-center font-mono font-extrabold text-sm text-[#6d28d9] bg-[#ede9fe] shadow-[-4px_0_12px_rgba(139,92,246,0.15)]">
+                          {Array.from(columnAttendanceSums.values()).reduce((acc, v) => acc + v, 0)}
+                        </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
