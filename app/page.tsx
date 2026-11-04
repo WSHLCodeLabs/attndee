@@ -1195,78 +1195,22 @@ export default function HomePage() {
                           })}
 
                           {/* Sticky Right-locked Purple Summary Cell */}
-                          <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-3 py-2 text-center font-mono font-bold whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] ${
+                          <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-3 py-2 text-center font-bold whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] ${
                             isHeaderRow
                               ? 'bg-purple-100/80 text-purple-900 font-semibold text-xs'
                               : isStudentRow
                               ? 'bg-[#f5f3ff] text-[#7c3aed]'
                               : 'bg-white text-gray-300'
                           }`}>
-                            {isHeaderRow ? 'รวม' : isStudentRow ? (studentScore ?? 0) : ''}
+                            {isHeaderRow
+                              ? 'รวม'
+                              : isStudentRow
+                              ? (studentScore && studentScore > 0 ? `${studentScore} ครั้ง` : '0')
+                              : ''}
                           </td>
                         </tr>
                       );
                     })}
-
-                    {/* Bottom Column Attendance Sum Row (shows total for each date column) */}
-                    {historicalAttendanceColIndices.length > 0 && (
-                      <tr className="bg-purple-50/60 font-semibold border-t-2 border-purple-200 text-xs">
-                        <td className="border-b border-r border-purple-200 px-2 py-2.5 text-center text-purple-700 font-mono">
-                          ∑
-                        </td>
-                        {visibleColumnIndices.map((colIdx) => {
-                          const colSum = columnAttendanceSums.get(colIdx);
-                          const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
-                          const isSeqCol = colIdx === 1;
-
-                          if (colIdx === 2) {
-                            // Student ID or First descriptive column
-                            return (
-                              <td
-                                key={colIdx}
-                                className="border-b border-r border-purple-200 px-3 py-2.5 text-purple-900 font-bold"
-                              >
-                                รวมมาเรียน (คน)
-                              </td>
-                            );
-                          }
-
-                          if (colSum !== undefined) {
-                            return (
-                              <td
-                                key={colIdx}
-                                className="border-b border-r border-purple-200 px-3 py-2.5 text-center font-mono text-purple-800 font-bold bg-purple-100/50"
-                              >
-                                {colSum}
-                              </td>
-                            );
-                          }
-
-                          if (isAttendanceCol) {
-                            return (
-                              <td
-                                key={colIdx}
-                                className="border-b border-r border-purple-200 px-3 py-2.5 text-center font-mono text-gray-400"
-                              >
-                                —
-                              </td>
-                            );
-                          }
-
-                          return (
-                            <td
-                              key={colIdx}
-                              className={`border-b border-r border-purple-200 py-2.5 ${isSeqCol ? 'w-14 text-center' : 'px-3'}`}
-                            />
-                          );
-                        })}
-
-                        {/* Sticky Right-locked Purple Bottom Total Sum */}
-                        <td className="sticky right-0 z-10 border-b border-l border-purple-300 px-3 py-2.5 text-center font-mono font-extrabold text-sm text-[#6d28d9] bg-[#ede9fe] shadow-[-4px_0_12px_rgba(139,92,246,0.15)]">
-                          {Array.from(columnAttendanceSums.values()).reduce((acc, v) => acc + v, 0)}
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
