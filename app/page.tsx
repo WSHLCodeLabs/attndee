@@ -595,22 +595,49 @@ export default function HomePage() {
 
     for (let c = Math.max(0, idColIdx + 1); c < parsedRoster.nextAttendanceColIndex; c++) {
       const headerVal = String(headerRow[c] ?? '').trim();
-      // Date patterns like DD/MM/YYYY, D/M/YY or numbers with slashes/dashes
-      const isDate =
+      const headerValLower = headerVal.toLowerCase();
+
+      // Skip non-attendance detail columns (Faculty, Major, Major Code, Status, Google Email, KU/Office365 Email)
+      const isDetailCol =
+        headerValLower.includes('คณะ') ||
+        headerValLower.includes('faculty') ||
+        headerValLower.includes('สาขาวิชา') ||
+        headerValLower.includes('สาขา') ||
+        headerValLower.includes('major') ||
+        headerValLower.includes('สถานะ') ||
+        headerValLower.includes('status') ||
+        headerValLower.includes('google') ||
+        headerValLower.includes('office') ||
+        headerValLower.includes('365') ||
+        headerValLower.includes('email') ||
+        headerValLower.includes('อีเมล') ||
+        headerValLower.includes('ku.th') ||
+        headerValLower.includes('ชื่อ-นามสกุล') ||
+        headerValLower.includes('name');
+
+      if (isDetailCol) {
+        continue;
+      }
+
+      // Check if header matches a date pattern like DD/MM/YYYY, D/M/YY
+      const isExplicitDate =
         /\d{1,2}[/-]\d{1,2}/.test(headerVal) ||
-        (/\d+/.test(headerVal) && headerVal.length >= 4);
+        /\d{1,2}\s+(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)/i.test(headerVal);
 
       // Check if student cells in this column contain scores (0, 0.5, 1, etc.)
       let hasNumericScores = false;
       for (const student of parsedRoster.students) {
         const val = parsedRoster.rawGrid[student.row_index]?.[c];
-        if (typeof val === 'number' || (typeof val === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(val.trim()))) {
+        if (
+          typeof val === 'number' ||
+          (typeof val === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(val.trim()))
+        ) {
           hasNumericScores = true;
           break;
         }
       }
 
-      if (isDate || hasNumericScores) {
+      if (isExplicitDate || hasNumericScores) {
         dateCols.push(c);
       }
     }
