@@ -26,7 +26,7 @@ import {
 import { upsertTeacherCloudFile } from '@/utils/cloud-storage';
 import { authenticator } from 'otplib';
 import { QRCodeSVG } from 'qrcode.react';
-import { Download, Shuffle, PictureInPicture2, Search, X, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { Download, Shuffle, PictureInPicture2, Search, X, FileSpreadsheet, Loader2, AlertCircle } from 'lucide-react';
 import Loader from '@/components/Loader';
 
 export default function RoomPage() {
@@ -75,6 +75,7 @@ export default function RoomPage() {
   // Track cards playing the subtle receding collapse animation (student_id -> optimistic score)
   const [collapsingScores, setCollapsingScores] = useState<Record<string, 0 | 0.5 | 1>>({});
   const [isExiting, setIsExiting] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Room title marquee state (auto-scrolls & loops only when title overflows container)
@@ -372,6 +373,21 @@ export default function RoomPage() {
     };
   }, []);
 
+  // Warn teacher before closing tab or reloading while room is active
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isExiting) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isExiting]);
+
   // 1. Fetch room on mount
   useEffect(() => {
     const fetchRoom = async () => {
@@ -458,7 +474,28 @@ export default function RoomPage() {
             uniqueMap.set(key, item);
           }
         }
-        setAttendanceList(Array.from(uniqueMap.values()));
+        const attendanceArr = Array.from(uniqueMap.values());
+        setAttendanceList(attendanceArr);
+
+        // Auto-enroll all checked-in students into rosterStudents so 0-score doesn't discard them in Guest Mode
+        const currentRoster = room.student_list_json?.roster_students || [];
+        const missingFromRoster: KURosterStudent[] = [];
+        for (const item of attendanceArr) {
+          const cId = item.student_id.trim();
+          if (!currentRoster.some((r) => r.student_id.trim() === cId) && !missingFromRoster.some((m) => m.student_id.trim() === cId)) {
+            missingFromRoster.push({
+              row_index: currentRoster.length + missingFromRoster.length + 1,
+              student_id: cId,
+              name_th: `${item.first_name} ${item.last_name}`.trim(),
+              first_name: item.first_name || cId,
+              last_name: item.last_name || '-',
+              status: currentRoster.length > 0 ? 'Extra' : 'Regular',
+            });
+          }
+        }
+        if (missingFromRoster.length > 0) {
+          void persistUpdatedRoster([...currentRoster, ...missingFromRoster]);
+        }
       }
     };
 
@@ -477,12 +514,27 @@ export default function RoomPage() {
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newAttendance = payload.new as Attendance;
+            const cleanNewId = newAttendance.student_id.trim();
             setAttendanceList((prev) => {
-              if (prev.some((a) => a.student_id.trim() === newAttendance.student_id.trim())) {
+              if (prev.some((a) => a.student_id.trim() === cleanNewId)) {
                 return prev;
               }
               return [newAttendance, ...prev];
             });
+
+            // Ensure student is in rosterStudents so changing score to 0 keeps them in absent tab
+            const currentRoster = room.student_list_json?.roster_students || [];
+            if (!currentRoster.some((r) => r.student_id.trim() === cleanNewId)) {
+              const newRosterStudent: KURosterStudent = {
+                row_index: currentRoster.length + 1,
+                student_id: cleanNewId,
+                name_th: `${newAttendance.first_name} ${newAttendance.last_name}`.trim(),
+                first_name: newAttendance.first_name || cleanNewId,
+                last_name: newAttendance.last_name || '-',
+                status: currentRoster.length > 0 ? 'Extra' : 'Regular',
+              };
+              void persistUpdatedRoster([...currentRoster, newRosterStudent]);
+            }
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as any)?.id;
             if (deletedId) {
@@ -647,23 +699,21 @@ export default function RoomPage() {
     // 1. Update half-score state immediately in 0ms
     updateHalfScore(cleanId, score === 0.5);
 
-    // 2. If room has an Excel roster, make sure any added/managed student is enrolled in rosterStudents in the background
-    if (rosterStudents.length > 0) {
-      const isAlreadyInRoster = rosterStudents.some(
-        (s) => s.student_id.trim() === cleanId
-      );
-      if (!isAlreadyInRoster) {
-        const newRosterStudent: KURosterStudent = {
-          row_index: rosterStudents.length + 1,
-          student_id: cleanId,
-          name_th: `${student.first_name} ${student.last_name}`.trim(),
-          first_name: student.first_name || cleanId,
-          last_name: student.last_name || '-',
-          status: 'Extra',
-        };
-        const updatedRoster = [...rosterStudents, newRosterStudent];
-        void persistUpdatedRoster(updatedRoster);
-      }
+    // 2. Ensure student is enrolled in rosterStudents (in both Roster and Guest/Empty rooms)
+    const isAlreadyInRoster = rosterStudents.some(
+      (s) => s.student_id.trim() === cleanId
+    );
+    if (!isAlreadyInRoster) {
+      const newRosterStudent: KURosterStudent = {
+        row_index: rosterStudents.length + 1,
+        student_id: cleanId,
+        name_th: `${student.first_name} ${student.last_name}`.trim(),
+        first_name: student.first_name || cleanId,
+        last_name: student.last_name || '-',
+        status: rosterStudents.length > 0 ? 'Extra' : 'Regular',
+      };
+      const updatedRoster = [...rosterStudents, newRosterStudent];
+      void persistUpdatedRoster(updatedRoster);
     }
 
     // 3. Helper to commit the optimistic attendanceList state update
@@ -969,11 +1019,11 @@ export default function RoomPage() {
     e.target.value = '';
   };
 
-  const handleDeleteAndExit = async () => {
+  const executeExitRoom = async () => {
     if (isExiting) return;
-    if (!confirm('ต้องการปิดห้องเช็คชื่อและบันทึกผลใช่หรือไม่?')) return;
-
     setIsExiting(true);
+    setShowExitConfirmModal(false);
+
     try {
       // If teacher is logged in and this room has an Excel roster OR checked-in students, automatically save .xlsx to Supabase Cloud Storage
       const hasAnyStudents =
@@ -1017,6 +1067,11 @@ export default function RoomPage() {
     } catch {}
     await supabase.from('active_rooms').delete().eq('id', roomId);
     router.push('/');
+  };
+
+  const handleDeleteAndExit = () => {
+    if (isExiting) return;
+    setShowExitConfirmModal(true);
   };
 
   // Render Quick Score Pill Buttons (0 | 0.5 | 1.0) for a student
@@ -1666,6 +1721,52 @@ export default function RoomPage() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal: Exit & Finalize Room */}
+      {showExitConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-gray-100 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <AlertCircle size={26} />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold text-black">
+                ปิดห้องเช็คชื่อและบันทึกผล?
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                ระบบจะบันทึกผลการเข้าเรียน ปิดห้องเช็คชื่อ และสำรองไฟล์ขึ้น Cloud อัตโนมัติ (หากเข้าสู่ระบบ) คุณจะไม่สามารถเปิดรับเช็คชื่อในห้องเดิมนี้ได้อีก
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowExitConfirmModal(false)}
+                disabled={isExiting}
+                className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold transition-colors cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={executeExitRoom}
+                disabled={isExiting}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
+              >
+                {isExiting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>กำลังบันทึก...</span>
+                  </>
+                ) : (
+                  <span>ยืนยันปิดห้อง</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

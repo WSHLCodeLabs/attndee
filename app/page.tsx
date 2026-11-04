@@ -83,7 +83,10 @@ export default function HomePage() {
   const [loadingCloudFileId, setLoadingCloudFileId] = useState<string | null>(null);
   const [exportingCloudFileId, setExportingCloudFileId] = useState<string | null>(null);
   const [deletingCloudFileId, setDeletingCloudFileId] = useState<string | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<TeacherCloudFile | null>(null);
   const [activeCloudFileId, setActiveCloudFileId] = useState<string | null>(null);
+  // Column toggle for XLSX preview (clean by default: hide faculty, branch, emails)
+  const [showDetailedColumns, setShowDetailedColumns] = useState(false);
 
   // UI state
   const [isCreating, setIsCreating] = useState(false);
@@ -340,18 +343,25 @@ export default function HomePage() {
     }
   };
 
-  const handleDeleteCloudFile = async (
+  const handleDeleteCloudFile = (
     e: React.MouseEvent,
     cloudFile: TeacherCloudFile
   ) => {
     e.stopPropagation();
-    setDeletingCloudFileId(cloudFile.id);
+    setFileToDelete(cloudFile);
+  };
+
+  const confirmDeleteCloudFile = async () => {
+    if (!fileToDelete) return;
+    const targetFile = fileToDelete;
+    setDeletingCloudFileId(targetFile.id);
     try {
-      await deleteTeacherCloudFile(cloudFile);
-      setCloudFiles((prev) => prev.filter((f) => f.id !== cloudFile.id));
-      if (activeCloudFileId === cloudFile.id) {
+      await deleteTeacherCloudFile(targetFile);
+      setCloudFiles((prev) => prev.filter((f) => f.id !== targetFile.id));
+      if (activeCloudFileId === targetFile.id) {
         handleResetImport();
       }
+      setFileToDelete(null);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'ไม่สามารถลบไฟล์จาก Cloud ได้'
@@ -522,6 +532,50 @@ export default function HomePage() {
   }, [parsedRoster, previewRowsWithIndex]);
 
   const todayDateLabel = useMemo(() => new Date().toLocaleDateString('th-TH'), []);
+
+  // Determine which column indices to show/hide based on showDetailedColumns
+  const visibleColumnIndices = useMemo(() => {
+    if (!parsedRoster || previewRowsWithIndex.length === 0) return [];
+    const allCols: number[] = [];
+    for (let i = 0; i < visibleColumnCount; i++) {
+      allCols.push(i);
+    }
+    if (showDetailedColumns) return allCols;
+
+    // Filter out detailed / contact columns when collapsed:
+    // Faculty, Major, Major Code, Status, Google Email, KU/Office365 Email
+    return allCols.filter((colIdx) => {
+      // Always keep ID column and attendance column
+      const headerName = parsedRoster.columnHeaders[colIdx] || '';
+      const isIdCol = headerName === selectedIdColumn;
+      const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
+      if (isIdCol || isAttendanceCol) return true;
+
+      // Check header text in rawGrid at header_row_index or parsed columnHeaders
+      const headerText = String(
+        parsedRoster.rawGrid[parsedRoster.courseMeta.header_row_index]?.[colIdx] ||
+          headerName ||
+          ''
+      ).toLowerCase();
+
+      const isDetailCol =
+        headerText.includes('คณะ') ||
+        headerText.includes('faculty') ||
+        headerText.includes('สาขาวิชา') ||
+        headerText.includes('สาขา') ||
+        headerText.includes('major') ||
+        headerText.includes('สถานะ') ||
+        headerText.includes('status') ||
+        headerText.includes('google') ||
+        headerText.includes('office') ||
+        headerText.includes('365') ||
+        headerText.includes('email') ||
+        headerText.includes('อีเมล') ||
+        headerText.includes('ku.th');
+
+      return !isDetailCol;
+    });
+  }, [parsedRoster, previewRowsWithIndex, visibleColumnCount, showDetailedColumns, selectedIdColumn]);
 
   const renderMapBox = (roundedClass: string) => (
     <div className={`relative w-full h-full overflow-hidden bg-[#cbe6cc] ${roundedClass}`}>
@@ -925,7 +979,7 @@ export default function HomePage() {
                       รหัสนิสิต: คอลัมน์ {selectedIdColumn}
                     </span>
                     <span className="text-xs px-2.5 py-0.5 bg-[#f2fbf7] text-[#1f9d5c] border border-[#2bb673] rounded-full font-semibold flex-shrink-0">
-                      เติมคะแนน (1/0): คอลัมน์ {parsedRoster.nextAttendanceColumn}
+                      เติมคะแนน: คอลัมน์ {parsedRoster.nextAttendanceColumn}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate">
@@ -933,14 +987,25 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleResetImport}
-                  className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0 cursor-pointer"
-                  title="นำไฟล์ออก"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowDetailedColumns((prev) => !prev)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    title={showDetailedColumns ? 'ซ่อนข้อมูลเพิ่มเติม' : 'แสดงข้อมูลเพิ่มเติม (คณะ, สาขา, อีเมล)'}
+                  >
+                    <span>{showDetailedColumns ? '👁️ ซ่อนข้อมูลเพิ่มเติม' : '👁️ แสดงข้อมูลเพิ่มเติม'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResetImport}
+                    className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                    title="นำไฟล์ออก"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               {/* Clean Spreadsheet Table */}
@@ -948,44 +1013,43 @@ export default function HomePage() {
                 <table className="w-full text-xs sm:text-sm" style={{ borderCollapse: 'collapse' }}>
                   <thead className="sticky top-0 z-10">
                     <tr>
-                      <th className="border-b border-r border-gray-200 px-3 py-2.5 bg-gray-100 font-semibold text-center text-gray-600 w-10">
+                      <th className="border-b border-r border-gray-200 px-2 py-2.5 bg-gray-100 font-semibold text-center text-gray-600 w-12 flex-shrink-0">
                         #
                       </th>
-                      {parsedRoster.columnHeaders
-                        .slice(0, visibleColumnCount)
-                        .map((header, i) => {
-                          const isIdColumn = header === selectedIdColumn;
-                          const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
-                          return (
-                            <th
-                              key={i}
-                              onClick={() => {
-                                if (!isAttendanceCol) handleColumnClick(i);
-                              }}
-                              className={`border-b border-r border-gray-200 px-3 py-2.5 font-semibold text-left transition-colors whitespace-nowrap ${
-                                isIdColumn
-                                  ? 'bg-[#0051fc] text-white cursor-pointer'
-                                  : isAttendanceCol
-                                  ? 'bg-[#2bb673] text-white cursor-default'
-                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span>{header}</span>
-                                {isIdColumn && (
-                                  <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold">
-                                    รหัสนิสิต
-                                  </span>
-                                )}
-                                {isAttendanceCol && (
-                                  <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold">
-                                    ช่องเติมคะแนน (1/0)
-                                  </span>
-                                )}
-                              </div>
-                            </th>
-                          );
-                        })}
+                      {visibleColumnIndices.map((i) => {
+                        const header = parsedRoster.columnHeaders[i] || `Col ${i + 1}`;
+                        const isIdColumn = header === selectedIdColumn;
+                        const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
+                        return (
+                          <th
+                            key={i}
+                            onClick={() => {
+                              if (!isAttendanceCol) handleColumnClick(i);
+                            }}
+                            className={`border-b border-r border-gray-200 px-3 py-2.5 font-semibold text-left transition-colors whitespace-nowrap ${
+                              isIdColumn
+                                ? 'bg-[#0051fc] text-white cursor-pointer'
+                                : isAttendanceCol
+                                ? 'bg-[#2bb673] text-white cursor-default'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{header}</span>
+                              {isIdColumn && (
+                                <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold">
+                                  รหัสนิสิต
+                                </span>
+                              )}
+                              {isAttendanceCol && (
+                                <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold">
+                                  ช่องเติมคะแนนวันนี้
+                                </span>
+                              )}
+                            </div>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
@@ -994,10 +1058,10 @@ export default function HomePage() {
                         key={actualRowIndex}
                         className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'}
                       >
-                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center text-gray-400 font-mono text-xs">
+                        <td className="border-b border-r border-gray-200 px-2 py-2 text-center text-gray-400 font-mono text-xs w-12">
                           {rowIdx + 1}
                         </td>
-                        {Array.from({ length: visibleColumnCount }).map((_, colIdx) => {
+                        {visibleColumnIndices.map((colIdx) => {
                           const isIdColumn =
                             parsedRoster.columnHeaders[colIdx] === selectedIdColumn;
                           const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
@@ -1014,7 +1078,7 @@ export default function HomePage() {
                                   key={colIdx}
                                   className="border-b border-r border-[#2bb673]/30 px-3 py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap"
                                 >
-                                  {isHeaderRow ? todayDateLabel : '1 / 0'}
+                                  {isHeaderRow ? todayDateLabel : '—'}
                                 </td>
                               );
                             }
@@ -1058,6 +1122,52 @@ export default function HomePage() {
           refreshCloudFiles();
         }}
       />
+
+      {/* Confirmation Modal: Delete Cloud File */}
+      {fileToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-gray-100 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center">
+              <Trash2 size={24} />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold text-black">
+                ยืนยันการลบไฟล์?
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                คุณกำลังจะลบไฟล์ <span className="font-semibold text-black break-all">{fileToDelete.filename}</span> ออกจาก Cloud Storage การดำเนินการนี้ไม่สามารถยกเลิกได้
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setFileToDelete(null)}
+                disabled={Boolean(deletingCloudFileId)}
+                className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold transition-colors cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteCloudFile}
+                disabled={Boolean(deletingCloudFileId)}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
+              >
+                {deletingCloudFileId ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>กำลังลบ...</span>
+                  </>
+                ) : (
+                  <span>ลบไฟล์</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
