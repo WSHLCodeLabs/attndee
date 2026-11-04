@@ -631,20 +631,33 @@ export default function HomePage() {
     return sums;
   }, [parsedRoster, historicalAttendanceColIndices]);
 
-  // Total attended count per student (row-level sum across historical date columns)
-  const studentTotalScores = useMemo(() => {
-    if (!parsedRoster) return new Map<number, number>();
-    const rowMap = new Map<number, number>();
+  // Total attended count per student (breakdown: total attended classes, on-time vs late)
+  const studentAttendanceStats = useMemo(() => {
+    if (!parsedRoster) {
+      return new Map<number, { totalPresent: number; onTime: number; late: number; scoreSum: number }>();
+    }
+    const rowMap = new Map<number, { totalPresent: number; onTime: number; late: number; scoreSum: number }>();
+
     for (const student of parsedRoster.students) {
-      let studentSum = 0;
+      let onTime = 0;
+      let late = 0;
+      let scoreSum = 0;
+
       for (const c of historicalAttendanceColIndices) {
         const rawVal = parsedRoster.rawGrid[student.row_index]?.[c];
         const num = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal ?? '').trim());
         if (!isNaN(num) && num > 0) {
-          studentSum += num;
+          scoreSum += num;
+          if (num >= 1) {
+            onTime += 1;
+          } else {
+            late += 1; // 0.5 score means attended late
+          }
         }
       }
-      rowMap.set(student.row_index, studentSum);
+
+      const totalPresent = onTime + late;
+      rowMap.set(student.row_index, { totalPresent, onTime, late, scoreSum });
     }
     return rowMap;
   }, [parsedRoster, historicalAttendanceColIndices]);
@@ -1130,9 +1143,9 @@ export default function HomePage() {
                       })}
 
                       {/* Sticky Right-locked Purple Summary Column */}
-                      <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-3.5 py-2.5 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] min-w-[88px]">
+                      <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-3.5 py-2.5 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] min-w-[100px]">
                         <div className="flex items-center justify-center gap-1.5">
-                          <span>รวม (ครั้ง)</span>
+                          <span>มาเรียน</span>
                         </div>
                       </th>
                     </tr>
@@ -1141,7 +1154,7 @@ export default function HomePage() {
                     {previewRowsWithIndex.map(({ row, actualRowIndex }, rowIdx) => {
                       const isHeaderRow = actualRowIndex === parsedRoster.courseMeta.header_row_index;
                       const isStudentRow = validStudentRowSet.has(actualRowIndex);
-                      const studentScore = studentTotalScores.get(actualRowIndex);
+                      const stats = studentAttendanceStats.get(actualRowIndex);
 
                       return (
                         <tr
@@ -1199,14 +1212,29 @@ export default function HomePage() {
                             isHeaderRow
                               ? 'bg-purple-100/80 text-purple-900 font-semibold text-xs'
                               : isStudentRow
-                              ? 'bg-[#f5f3ff] text-[#7c3aed]'
+                              ? 'bg-[#f5f3ff]'
                               : 'bg-white text-gray-300'
                           }`}>
-                            {isHeaderRow
-                              ? 'รวม'
-                              : isStudentRow
-                              ? (studentScore && studentScore > 0 ? `${studentScore} ครั้ง` : '0')
-                              : ''}
+                            {isHeaderRow ? (
+                              'รวม'
+                            ) : isStudentRow ? (
+                              !stats || stats.totalPresent === 0 ? (
+                                <span className="text-gray-400 font-mono font-semibold">0</span>
+                              ) : (
+                                <div className="inline-flex items-center gap-1.5 font-sans">
+                                  <span className="text-[#6d28d9] font-bold">
+                                    {stats.totalPresent} ครั้ง
+                                  </span>
+                                  {stats.late > 0 && (
+                                    <span className="text-[11px] font-normal text-amber-600 bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 rounded-md">
+                                      สาย {stats.late}
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            ) : (
+                              ''
+                            )}
                           </td>
                         </tr>
                       );
