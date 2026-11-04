@@ -15,6 +15,8 @@ import {
   Loader2,
   Download,
   Check,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { supabase, TeacherCloudFile } from '@/utils/supabase';
 import {
@@ -88,6 +90,8 @@ export default function HomePage() {
   const [activeCloudFileId, setActiveCloudFileId] = useState<string | null>(null);
   // Column toggle for XLSX preview (clean by default: hide faculty, branch, emails)
   const [showDetailedColumns, setShowDetailedColumns] = useState(false);
+  // Fullscreen / Expanded modal state for XLSX table
+  const [isFullscreenPreview, setIsFullscreenPreview] = useState(false);
 
   // UI state
   const [isCreating, setIsCreating] = useState(false);
@@ -658,6 +662,7 @@ export default function HomePage() {
       }
 
       const totalPresent = onTime + late;
+      // Absent count counts only past completed sessions where student explicitly received 0 or had no attendance
       const absent = Math.max(0, totalSessions - totalPresent);
       rowMap.set(student.row_index, { onTime, late, absent, totalPresent, scoreSum });
     }
@@ -1089,6 +1094,15 @@ export default function HomePage() {
 
                   <button
                     type="button"
+                    onClick={() => setIsFullscreenPreview(true)}
+                    className="p-1.5 text-gray-500 hover:text-[#0051fc] hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                    title="ขยายตารางเต็มจอ"
+                  >
+                    <Maximize2 size={16} />
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleResetImport}
                     className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                     title="นำไฟล์ออก"
@@ -1319,6 +1333,229 @@ export default function HomePage() {
                   <span>ลบไฟล์</span>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen / Expanded Table Modal */}
+      {isFullscreenPreview && hasFile && parsedRoster && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl w-full max-w-[96vw] h-[92vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center justify-between gap-4 flex-shrink-0">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h3 className="text-base sm:text-lg font-bold text-black truncate">
+                    {uploadedFile?.name || 'XLSX Preview'}
+                  </h3>
+                  <span className="text-xs px-2.5 py-0.5 bg-gray-100 text-black rounded-full font-semibold flex-shrink-0">
+                    {parsedRoster.students.length} คน
+                  </span>
+                  <span className="text-xs px-2.5 py-0.5 bg-blue-50 text-[#0051fc] border border-blue-200 rounded-full font-semibold flex-shrink-0">
+                    รหัสนิสิต: คอลัมน์ {selectedIdColumn}
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
+                  คลิกหัวคอลัมน์เพื่อเปลี่ยนคอลัมน์รหัสนิสิต • ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {/* Checkmark Toggle in Fullscreen */}
+                <label
+                  onClick={() => setShowDetailedColumns((prev) => !prev)}
+                  className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-gray-700 hover:text-black cursor-pointer select-none bg-gray-50 hover:bg-gray-100 border border-gray-200 px-3.5 py-2 rounded-xl transition-colors"
+                >
+                  <div
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      showDetailedColumns
+                        ? 'bg-[#0051fc] border-[#0051fc] text-white'
+                        : 'bg-white border-gray-300'
+                    }`}
+                  >
+                    {showDetailedColumns && <Check size={12} strokeWidth={3} />}
+                  </div>
+                  <span>แสดงข้อมูลเพิ่มเติม</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreenPreview(false)}
+                  className="p-2 text-gray-500 hover:text-black hover:bg-gray-100 rounded-xl transition-colors flex items-center gap-1.5 font-semibold text-xs sm:text-sm border border-gray-200 cursor-pointer"
+                  title="ย่อขนาดกลับ"
+                >
+                  <Minimize2 size={16} />
+                  <span>ย่อกลับ</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Table Content */}
+            <div className="flex-1 overflow-auto bg-white">
+              <table className="w-full text-xs sm:text-sm" style={{ borderCollapse: 'collapse' }}>
+                <thead className="sticky top-0 z-10 shadow-xs">
+                  <tr>
+                    <th className="border-b border-r border-gray-200 px-2 py-3 bg-gray-100 font-semibold text-center text-gray-600 w-12 flex-shrink-0">
+                      #
+                    </th>
+                    {visibleColumnIndices.map((i) => {
+                      const header = parsedRoster.columnHeaders[i] || `Col ${i + 1}`;
+                      const isIdColumn = header === selectedIdColumn;
+                      const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
+                      const isSeqCol = i === 1; // Column B (ลำดับที่)
+                      return (
+                        <th
+                          key={i}
+                          onClick={() => {
+                            if (!isAttendanceCol) handleColumnClick(i);
+                          }}
+                          className={`border-b border-r border-gray-200 py-3 font-semibold text-left transition-colors whitespace-nowrap ${
+                            isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center' : 'px-3.5'
+                          } ${
+                            isIdColumn
+                              ? 'bg-[#0051fc] text-white cursor-pointer'
+                              : isAttendanceCol
+                              ? 'bg-[#2bb673] text-white cursor-default'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
+                          }`}
+                        >
+                          <div className={`flex items-center gap-2 ${isSeqCol ? 'justify-center' : 'justify-between'}`}>
+                            <span>{header}</span>
+                            {isIdColumn && (
+                              <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold">
+                                รหัสนิสิต
+                              </span>
+                            )}
+                            {isAttendanceCol && (
+                              <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold">
+                                ช่องเติมคะแนนวันนี้
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                      );
+                    })}
+
+                    {/* Sticky Right-locked Purple Summary Column */}
+                    <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-4 py-3 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] min-w-[140px]">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>มา / สาย / ขาด</span>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRowsWithIndex.map(({ row, actualRowIndex }, rowIdx) => {
+                    const isHeaderRow = actualRowIndex === parsedRoster.courseMeta.header_row_index;
+                    const isStudentRow = validStudentRowSet.has(actualRowIndex);
+                    const stats = studentAttendanceStats.get(actualRowIndex);
+
+                    return (
+                      <tr
+                        key={actualRowIndex}
+                        className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'}
+                      >
+                        <td className="border-b border-r border-gray-200 px-2 py-2.5 text-center text-gray-400 font-mono text-xs w-12">
+                          {rowIdx + 1}
+                        </td>
+                        {visibleColumnIndices.map((colIdx) => {
+                          const isIdColumn =
+                            parsedRoster.columnHeaders[colIdx] === selectedIdColumn;
+                          const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
+                          const isSeqCol = colIdx === 1; // Column B (ลำดับที่)
+                          const val = row[colIdx];
+
+                          if (isAttendanceCol) {
+                            if (isHeaderRow || isStudentRow) {
+                              return (
+                                <td
+                                  key={colIdx}
+                                  className="border-b border-r border-[#2bb673]/30 px-3 py-2.5 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap"
+                                >
+                                  {isHeaderRow ? todayDateLabel : '—'}
+                                </td>
+                              );
+                            }
+
+                            return (
+                              <td
+                                key={colIdx}
+                                className="border-b border-r border-gray-200 px-3 py-2.5 text-gray-700"
+                              />
+                            );
+                          }
+
+                          return (
+                            <td
+                              key={colIdx}
+                              className={`border-b border-r border-gray-200 py-2.5 text-gray-700 truncate ${
+                                isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center font-mono' : 'px-3.5 max-w-[240px]'
+                              } ${
+                                isIdColumn ? 'bg-blue-50/50 font-semibold text-black font-mono' : ''
+                              }`}
+                            >
+                              {val !== undefined && val !== null && String(val).trim() !== ''
+                                ? String(val)
+                                : ''}
+                            </td>
+                          );
+                        })}
+
+                        {/* Sticky Right-locked Purple Summary Cell */}
+                        <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-4 py-2.5 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] ${
+                          isHeaderRow
+                            ? 'bg-purple-100/80 text-purple-900 font-semibold text-xs'
+                            : isStudentRow
+                            ? 'bg-[#f5f3ff]'
+                            : 'bg-white text-gray-300'
+                        }`}>
+                          {isHeaderRow ? (
+                            'มา / สาย / ขาด'
+                          ) : isStudentRow ? (
+                            stats ? (
+                              <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold">
+                                <span
+                                  className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  title={`มาตรงเวลา: ${stats.onTime} ครั้ง`}
+                                >
+                                  {stats.onTime}
+                                </span>
+                                <span className="text-gray-300 font-normal">/</span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded border ${
+                                    stats.late > 0
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200 font-bold'
+                                      : 'bg-gray-50 text-gray-400 border-gray-200'
+                                  }`}
+                                  title={`มาสาย: ${stats.late} ครั้ง`}
+                                >
+                                  {stats.late}
+                                </span>
+                                <span className="text-gray-300 font-normal">/</span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded border ${
+                                    stats.absent > 0
+                                      ? 'bg-rose-50 text-rose-600 border-rose-200 font-bold'
+                                      : 'bg-gray-50 text-gray-400 border-gray-200'
+                                  }`}
+                                  title={`ขาดเรียน: ${stats.absent} ครั้ง`}
+                                >
+                                  {stats.absent}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 font-mono text-xs">0 / 0 / 0</span>
+                            )
+                          ) : (
+                            ''
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
