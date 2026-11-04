@@ -14,6 +14,7 @@ import {
   Trash2,
   Loader2,
   Download,
+  Check,
 } from 'lucide-react';
 import { supabase, TeacherCloudFile } from '@/utils/supabase';
 import {
@@ -975,32 +976,35 @@ export default function HomePage() {
                     <span className="text-xs px-2.5 py-0.5 bg-gray-100 text-black rounded-full font-semibold flex-shrink-0">
                       {parsedRoster.students.length} คน
                     </span>
-                    <span className="text-xs px-2.5 py-0.5 bg-blue-50 text-[#0051fc] border border-blue-200 rounded-full font-semibold flex-shrink-0">
-                      รหัสนิสิต: คอลัมน์ {selectedIdColumn}
-                    </span>
-                    <span className="text-xs px-2.5 py-0.5 bg-[#f2fbf7] text-[#1f9d5c] border border-[#2bb673] rounded-full font-semibold flex-shrink-0">
-                      เติมคะแนน: คอลัมน์ {parsedRoster.nextAttendanceColumn}
-                    </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate">
                     คลิกหัวคอลัมน์เพื่อเปลี่ยนคอลัมน์รหัสนิสิต • ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn} อัตโนมัติ
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    type="button"
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {/* Checkmark Toggle for Detailed Columns */}
+                  <label
                     onClick={() => setShowDetailedColumns((prev) => !prev)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 transition-colors flex items-center gap-1.5 cursor-pointer"
-                    title={showDetailedColumns ? 'ซ่อนข้อมูลเพิ่มเติม' : 'แสดงข้อมูลเพิ่มเติม (คณะ, สาขา, อีเมล)'}
+                    className="flex items-center gap-2 text-xs font-semibold text-gray-700 hover:text-black cursor-pointer select-none bg-gray-50 hover:bg-gray-100 border border-gray-200 px-3 py-1.5 rounded-xl transition-colors"
+                    title={showDetailedColumns ? 'คลิกเพื่อซ่อนข้อมูลเพิ่มเติม' : 'คลิกเพื่อแสดงข้อมูลเพิ่มเติม (คณะ, สาขา, อีเมล)'}
                   >
-                    <span>{showDetailedColumns ? '👁️ ซ่อนข้อมูลเพิ่มเติม' : '👁️ แสดงข้อมูลเพิ่มเติม'}</span>
-                  </button>
+                    <div
+                      className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                        showDetailedColumns
+                          ? 'bg-[#0051fc] border-[#0051fc] text-white'
+                          : 'bg-white border-gray-300'
+                      }`}
+                    >
+                      {showDetailedColumns && <Check size={12} strokeWidth={3} />}
+                    </div>
+                    <span>แสดงข้อมูลเพิ่มเติม</span>
+                  </label>
 
                   <button
                     type="button"
                     onClick={handleResetImport}
-                    className="p-1.5 text-gray-500 hover:text-black hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                    className="p-1.5 text-gray-400 hover:text-black hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
                     title="นำไฟล์ออก"
                   >
                     <X size={18} />
