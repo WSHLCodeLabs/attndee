@@ -1251,49 +1251,20 @@ export default function HomePage() {
                           })}
 
                           {/* Sticky Right-locked Purple Summary Cell */}
-                          <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-3 py-2 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] ${
+                          <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-3 py-2 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs ${
                             isHeaderRow
-                              ? 'bg-purple-100/80 text-purple-900 font-semibold text-xs'
+                              ? 'bg-purple-100/80 text-purple-900 font-semibold'
                               : isStudentRow
-                              ? 'bg-[#f5f3ff]'
+                              ? 'bg-[#f5f3ff] text-neutral-800'
                               : 'bg-white text-gray-300'
                           }`}>
                             {isHeaderRow ? (
                               'มา / สาย / ขาด'
                             ) : isStudentRow ? (
                               stats ? (
-                                <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold">
-                                  <span
-                                    className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                    title={`มาตรงเวลา: ${stats.onTime} ครั้ง`}
-                                  >
-                                    {stats.onTime}
-                                  </span>
-                                  <span className="text-gray-300 font-normal">/</span>
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded border ${
-                                      stats.late > 0
-                                        ? 'bg-amber-50 text-amber-700 border-amber-200 font-bold'
-                                        : 'bg-gray-50 text-gray-400 border-gray-200'
-                                    }`}
-                                    title={`มาสาย: ${stats.late} ครั้ง`}
-                                  >
-                                    {stats.late}
-                                  </span>
-                                  <span className="text-gray-300 font-normal">/</span>
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded border ${
-                                      stats.absent > 0
-                                        ? 'bg-rose-50 text-rose-600 border-rose-200 font-bold'
-                                        : 'bg-gray-50 text-gray-400 border-gray-200'
-                                    }`}
-                                    title={`ขาดเรียน: ${stats.absent} ครั้ง`}
-                                  >
-                                    {stats.absent}
-                                  </span>
-                                </div>
+                                `${stats.onTime}/${stats.late}/${stats.absent}`
                               ) : (
-                                <span className="text-gray-400 font-mono text-xs">0 / 0 / 0</span>
+                                '0/0/0'
                               )
                             ) : (
                               ''
@@ -1530,49 +1501,20 @@ export default function HomePage() {
                         })}
 
                         {/* Sticky Right-locked Purple Summary Cell */}
-                        <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-4 py-2.5 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] ${
+                        <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-4 py-2.5 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs ${
                           isHeaderRow
-                            ? 'bg-purple-100/80 text-purple-900 font-semibold text-xs'
+                            ? 'bg-purple-100/80 text-purple-900 font-semibold'
                             : isStudentRow
-                            ? 'bg-[#f5f3ff]'
+                            ? 'bg-[#f5f3ff] text-neutral-800'
                             : 'bg-white text-gray-300'
                         }`}>
                           {isHeaderRow ? (
                             'มา / สาย / ขาด'
                           ) : isStudentRow ? (
                             stats ? (
-                              <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold">
-                                <span
-                                  className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                  title={`มาตรงเวลา: ${stats.onTime} ครั้ง`}
-                                >
-                                  {stats.onTime}
-                                </span>
-                                <span className="text-gray-300 font-normal">/</span>
-                                <span
-                                  className={`px-1.5 py-0.5 rounded border ${
-                                    stats.late > 0
-                                      ? 'bg-amber-50 text-amber-700 border-amber-200 font-bold'
-                                      : 'bg-gray-50 text-gray-400 border-gray-200'
-                                  }`}
-                                  title={`มาสาย: ${stats.late} ครั้ง`}
-                                >
-                                  {stats.late}
-                                </span>
-                                <span className="text-gray-300 font-normal">/</span>
-                                <span
-                                  className={`px-1.5 py-0.5 rounded border ${
-                                    stats.absent > 0
-                                      ? 'bg-rose-50 text-rose-600 border-rose-200 font-bold'
-                                      : 'bg-gray-50 text-gray-400 border-gray-200'
-                                  }`}
-                                  title={`ขาดเรียน: ${stats.absent} ครั้ง`}
-                                >
-                                  {stats.absent}
-                                </span>
-                              </div>
+                              `${stats.onTime}/${stats.late}/${stats.absent}`
                             ) : (
-                              <span className="text-gray-400 font-mono text-xs">0 / 0 / 0</span>
+                              '0/0/0'
                             )
                           ) : (
                             ''
