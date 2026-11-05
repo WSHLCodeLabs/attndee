@@ -285,3 +285,17 @@ During the architectural audit and pre-production refactoring passes, several cr
   - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
 - **What remains**:
   - Live verification on mobile/tablet devices.
+
+### [2026-11-05] High-Visibility In-Place Confirmation Card for Attendance Score Changes
+- **What was done**:
+  1. **Redesigned Score Confirmation UX**:
+     - Upgraded `renderQuickScoreButtons` in `app/room/[id]/page.tsx` from small appended buttons to an unmistakable, high-visibility confirmation card that replaces the 3 pills on click.
+     - Displays `เปลี่ยนเป็น {คะแนน}?` in a warm amber badge with a prominent black `[✓ ยืนยัน]` button and white `[ยกเลิก]` button.
+     - Safeguarded `student_id` type coercion (`String(student.student_id ?? '').trim()`).
+  2. **Zero Row Overflow**:
+     - Prevents row width overflow on mobile/tablet viewports by swapping out the score buttons rather than squeezing 5 buttons into one row.
+- **Key decisions made**:
+  - Unmistakable UI feedback: teacher clearly sees the confirmation prompt and target score before committing.
+  - TypeScript checked with 0 errors (`npx tsc --noEmit`).
+- **What remains**:
+  - Live verification with user.

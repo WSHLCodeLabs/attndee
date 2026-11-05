@@ -1085,7 +1085,7 @@ export default function RoomPage() {
     first_name: string;
     last_name: string;
   }) => {
-    const cleanId = student.student_id.trim();
+    const cleanId = String(student.student_id ?? '').trim();
     const isCheckedIn = checkedInIdSet.has(cleanId);
     const isHalf = Boolean(halfScoreIds[cleanId]);
     const collapsingOverride = collapsingScores[cleanId];
@@ -1126,54 +1126,21 @@ export default function RoomPage() {
     };
 
     return (
-      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-        <div className="flex items-center gap-1 sm:gap-1.5">
-          {([0, 0.5, 1] as const).map((scoreVal) => {
-            const isOriginalActive = currentScore === scoreVal;
-            const isPendingTarget = isPending && pendingTargetScore === scoreVal;
-            const label = scoreVal === 1 ? '1.0' : scoreVal.toString();
-
-            let style = 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-400';
-
-            if (isPendingTarget) {
-              style = 'bg-neutral-900 text-white border-neutral-900 ring-2 ring-black font-extrabold shadow-sm scale-105';
-            } else if (isOriginalActive && !isPending) {
-              if (scoreVal === 1) {
-                style = 'bg-[#0051fc] text-white border-[#0051fc] shadow-xs';
-              } else if (scoreVal === 0.5) {
-                style = 'bg-[#6ea0f5] text-white border-[#3b78e7] shadow-xs';
-              } else {
-                style = 'bg-neutral-900 text-white border-neutral-900';
-              }
-            } else if (isOriginalActive && isPending) {
-              style = 'bg-gray-100 text-gray-400 border-gray-200 opacity-60';
-            }
-
-            return (
-              <button
-                key={scoreVal}
-                type="button"
-                disabled={isBusy}
-                onClick={() => handleScoreClick(scoreVal)}
-                className={`min-w-[44px] sm:min-w-[52px] py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer tabular-nums ${style}`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Confirmation buttons popping up next to score buttons */}
-        {isPending && (
-          <div className="flex items-center gap-1 sm:gap-1.5 animate-in fade-in zoom-in-95 duration-150">
+      <div className="flex items-center flex-shrink-0">
+        {isPending ? (
+          /* Prominent Confirmation Box popping up in place behind the student's name */
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded-2xl shadow-xs animate-in fade-in zoom-in-95 duration-150">
+            <span className="text-xs sm:text-sm font-bold text-amber-900 whitespace-nowrap">
+              เปลี่ยนเป็น {pendingTargetScore === 1 ? '1.0' : pendingTargetScore}?
+            </span>
             <button
               type="button"
               disabled={isBusy}
               onClick={handleConfirmScore}
-              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-black hover:bg-neutral-800 active:scale-95 text-white text-xs sm:text-sm font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer whitespace-nowrap"
+              className="px-3 py-1.5 rounded-xl bg-black hover:bg-neutral-800 active:scale-95 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap"
               title="ยืนยันการเปลี่ยนคะแนน"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
               <span>ยืนยัน</span>
@@ -1182,13 +1149,42 @@ export default function RoomPage() {
               type="button"
               disabled={isBusy}
               onClick={handleCancelScore}
-              className="p-1.5 sm:p-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-500 hover:text-black text-xs font-bold transition-all cursor-pointer"
+              className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-gray-100 active:scale-95 text-gray-700 hover:text-black border border-gray-200 text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap"
               title="ยกเลิก"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              ยกเลิก
             </button>
+          </div>
+        ) : (
+          /* Standard 0 | 0.5 | 1.0 Quick Score Pills */
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {([0, 0.5, 1] as const).map((scoreVal) => {
+              const isActive = currentScore === scoreVal;
+              const label = scoreVal === 1 ? '1.0' : scoreVal.toString();
+
+              let activeStyle = 'bg-neutral-900 text-white border-neutral-900';
+              if (scoreVal === 1 && isActive) {
+                activeStyle = 'bg-[#0051fc] text-white border-[#0051fc] shadow-xs';
+              } else if (scoreVal === 0.5 && isActive) {
+                activeStyle = 'bg-[#6ea0f5] text-white border-[#3b78e7] shadow-xs';
+              }
+
+              return (
+                <button
+                  key={scoreVal}
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => handleScoreClick(scoreVal)}
+                  className={`min-w-[48px] sm:min-w-[56px] py-2 px-3 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer tabular-nums ${
+                    isActive
+                      ? activeStyle
+                      : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-400'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
