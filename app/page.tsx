@@ -1096,7 +1096,7 @@ export default function HomePage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate">
-                    คลิกหัวคอลัมน์เพื่อเปลี่ยนคอลัมน์รหัสนิสิต • ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn} อัตโนมัติ
+                    ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn} อัตโนมัติ
                   </p>
                 </div>
 
@@ -1355,7 +1355,7 @@ export default function HomePage() {
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
-                  คลิกหัวคอลัมน์เพื่อเปลี่ยนคอลัมน์รหัสนิสิต • ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn}
+                  ระบบจะเติมคะแนนเช็คชื่อวันนี้ ({todayDateLabel}) ลงในคอลัมน์ {parsedRoster.nextAttendanceColumn}
                 </p>
               </div>
 
