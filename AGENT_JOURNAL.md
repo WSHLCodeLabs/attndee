@@ -250,3 +250,20 @@ During the architectural audit and pre-production refactoring passes, several cr
   - TypeScript checked: zero type errors (`npx tsc --noEmit` code 0).
 - **What remains**:
   - Live verification on mobile/tablet devices.
+
+### [2026-11-05] Inline Score Change Confirmation Popover
+- **What was done**:
+  1. **Inline Confirmation for Attendance Score Changes**:
+     - Updated `app/room/[id]/page.tsx` with `pendingScoreChange` tracking state.
+     - When an instructor clicks a new score (`0`, `0.5`, `1.0`) that differs from the student's current score, the change is staged rather than immediately committed.
+     - The selected score pill is highlighted (`ring-2 ring-black font-extrabold shadow-sm scale-105`), and inline confirmation buttons (`[✓ ยืนยัน]` + `[✕]`) pop up beside the score pills.
+     - Clicking `✓ ยืนยัน` commits the score update and transitions the student card.
+     - Clicking `✕` or re-clicking the current score cancels the pending change immediately.
+  2. **Smart Reset on Context Switch**:
+     - `pendingScoreChange` resets cleanly when switching tabs (Present/Absent) or typing in the search bar.
+- **Key decisions made**:
+  - Prevents accidental misclicks when grading or updating attendance.
+  - Keeps UX rapid and zero-modal: confirmation happens right in line with the row.
+  - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
+- **What remains**:
+  - Live verification on desktop and mobile.

@@ -74,6 +74,11 @@ export default function RoomPage() {
   const [updatingStudentId, setUpdatingStudentId] = useState<string | null>(null);
   // Track cards playing the subtle receding collapse animation (student_id -> optimistic score)
   const [collapsingScores, setCollapsingScores] = useState<Record<string, 0 | 0.5 | 1>>({});
+  // Track inline score confirmation (studentId -> targetScore)
+  const [pendingScoreChange, setPendingScoreChange] = useState<{
+    studentId: string;
+    targetScore: 0 | 0.5 | 1;
+  } | null>(null);
   const [isExiting, setIsExiting] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1074,7 +1079,7 @@ export default function RoomPage() {
     setShowExitConfirmModal(true);
   };
 
-  // Render Quick Score Pill Buttons (0 | 0.5 | 1.0) for a student
+  // Render Quick Score Pill Buttons (0 | 0.5 | 1.0) for a student with inline confirmation
   const renderQuickScoreButtons = (student: {
     student_id: string;
     first_name: string;
@@ -1093,36 +1098,99 @@ export default function RoomPage() {
             ? 0.5
             : 1;
     const isBusy = updatingStudentId === cleanId || collapsingOverride !== undefined;
+    const isPending = pendingScoreChange?.studentId === cleanId;
+    const pendingTargetScore = isPending ? pendingScoreChange.targetScore : null;
+
+    const handleScoreClick = (scoreVal: 0 | 0.5 | 1) => {
+      if (scoreVal === currentScore) {
+        if (isPending) setPendingScoreChange(null);
+        return;
+      }
+
+      // Stage new target score awaiting confirmation
+      setPendingScoreChange({
+        studentId: cleanId,
+        targetScore: scoreVal,
+      });
+    };
+
+    const handleConfirmScore = async () => {
+      if (!isPending || pendingTargetScore === null) return;
+      const target = pendingTargetScore;
+      setPendingScoreChange(null);
+      await handleSetStudentScore(student, target);
+    };
+
+    const handleCancelScore = () => {
+      setPendingScoreChange(null);
+    };
 
     return (
       <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-        {([0, 0.5, 1] as const).map((scoreVal) => {
-          const isActive = currentScore === scoreVal;
-          const label = scoreVal === 1 ? '1.0' : scoreVal.toString();
+        <div className="flex items-center gap-1 sm:gap-1.5">
+          {([0, 0.5, 1] as const).map((scoreVal) => {
+            const isOriginalActive = currentScore === scoreVal;
+            const isPendingTarget = isPending && pendingTargetScore === scoreVal;
+            const label = scoreVal === 1 ? '1.0' : scoreVal.toString();
 
-          let activeStyle = 'bg-neutral-900 text-white border-neutral-900';
-          if (scoreVal === 1 && isActive) {
-            activeStyle = 'bg-[#0051fc] text-white border-[#0051fc] shadow-xs';
-          } else if (scoreVal === 0.5 && isActive) {
-            activeStyle = 'bg-[#6ea0f5] text-white border-[#3b78e7] shadow-xs';
-          }
+            let style = 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-400';
 
-          return (
+            if (isPendingTarget) {
+              style = 'bg-neutral-900 text-white border-neutral-900 ring-2 ring-black font-extrabold shadow-sm scale-105';
+            } else if (isOriginalActive && !isPending) {
+              if (scoreVal === 1) {
+                style = 'bg-[#0051fc] text-white border-[#0051fc] shadow-xs';
+              } else if (scoreVal === 0.5) {
+                style = 'bg-[#6ea0f5] text-white border-[#3b78e7] shadow-xs';
+              } else {
+                style = 'bg-neutral-900 text-white border-neutral-900';
+              }
+            } else if (isOriginalActive && isPending) {
+              style = 'bg-gray-100 text-gray-400 border-gray-200 opacity-60';
+            }
+
+            return (
+              <button
+                key={scoreVal}
+                type="button"
+                disabled={isBusy}
+                onClick={() => handleScoreClick(scoreVal)}
+                className={`min-w-[44px] sm:min-w-[52px] py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer tabular-nums ${style}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Confirmation buttons popping up next to score buttons */}
+        {isPending && (
+          <div className="flex items-center gap-1 sm:gap-1.5 animate-in fade-in zoom-in-95 duration-150">
             <button
-              key={scoreVal}
               type="button"
               disabled={isBusy}
-              onClick={() => handleSetStudentScore(student, scoreVal)}
-              className={`min-w-[48px] sm:min-w-[56px] py-2 px-3 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer tabular-nums ${
-                isActive
-                  ? activeStyle
-                  : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-400'
-              }`}
+              onClick={handleConfirmScore}
+              className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-black hover:bg-neutral-800 active:scale-95 text-white text-xs sm:text-sm font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer whitespace-nowrap"
+              title="ยืนยันการเปลี่ยนคะแนน"
             >
-              {label}
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>ยืนยัน</span>
             </button>
-          );
-        })}
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={handleCancelScore}
+              className="p-1.5 sm:p-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-500 hover:text-black text-xs font-bold transition-all cursor-pointer"
+              title="ยกเลิก"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1453,7 +1521,10 @@ export default function RoomPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPendingScoreChange(null);
+                }}
                 placeholder="พิมพ์รหัสนิสิต หรือ ชื่อนิสิต เพื่อเช็คชื่อ / ให้คะแนน (0, 0.5, 1.0)..."
                 className="w-full pl-12 pr-11 py-4 bg-white border border-gray-200 focus:border-black rounded-2xl text-base sm:text-lg text-black placeholder:text-gray-400 focus:outline-none transition-colors shadow-2xs"
               />
@@ -1463,6 +1534,7 @@ export default function RoomPage() {
                   onClick={() => {
                     setSearchQuery('');
                     setCustomStudentName('');
+                    setPendingScoreChange(null);
                   }}
                   className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-black cursor-pointer"
                 >
@@ -1477,7 +1549,10 @@ export default function RoomPage() {
                 <div className="flex items-center gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('present')}
+                    onClick={() => {
+                      setActiveTab('present');
+                      setPendingScoreChange(null);
+                    }}
                     className={`px-5 py-2.5 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${
                       activeTab === 'present'
                         ? 'bg-black text-white shadow-xs'
@@ -1490,7 +1565,10 @@ export default function RoomPage() {
                   {rosterStudents.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => setActiveTab('absent')}
+                      onClick={() => {
+                        setActiveTab('absent');
+                        setPendingScoreChange(null);
+                      }}
                       className={`px-5 py-2.5 rounded-xl text-sm sm:text-base font-bold transition-all cursor-pointer ${
                         activeTab === 'absent'
                           ? 'bg-black text-white shadow-xs'
