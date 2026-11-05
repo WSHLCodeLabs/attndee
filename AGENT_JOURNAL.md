@@ -267,3 +267,21 @@ During the architectural audit and pre-production refactoring passes, several cr
   - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
 - **What remains**:
   - Live verification on desktop and mobile.
+
+### [2026-11-05] Attndee Pass™ Passwordless KU Verification
+- **What was done**:
+  1. **Passwordless KU Student Pass Creation**:
+     - Refactored `components/PassCard.tsx` to completely remove password login/registration overhead.
+     - Form collects: Student ID (`student_id`), KU Email (`email`), First Name (`first_name`), Last Name (`last_name`), and Year Level (`year_level`).
+     - Added smart auto-fill: typing Student ID automatically suggests `b{student_id}@ku.th`, while allowing students to customize to any KU email format (e.g. `name.s@ku.th`).
+  2. **Strict Domain Validation without Password Friction**:
+     - Email prefix can be anything, but must end with official KU domain (`@ku.th`, `.ku.th`, or `@ku.ac.th`).
+     - Passes are saved directly in `localStorage ('attndee_pass')`, enabling fast-path 1-click check-ins on repeat visits.
+  3. **Zero Session Collision**:
+     - Decoupled student pass from `supabase.auth` completely; teacher workspace sessions on the same browser/origin are 100% safe from session resets or overrides.
+- **Key decisions made**:
+  - Eliminates classroom lockouts from forgotten passwords.
+  - Minimalist, responsive single-card layout.
+  - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
+- **What remains**:
+  - Live verification on mobile/tablet devices.
