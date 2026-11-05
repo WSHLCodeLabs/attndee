@@ -233,3 +233,20 @@ During the architectural audit and pre-production refactoring passes, several cr
   - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
 - **What remains**:
   - Live verification on mobile/tablet devices.
+
+### [2026-11-05] Attndee Pass™ 2-Steps Card Wizard
+- **What was done**:
+  1. **Converted PassCard into a 2-Steps Card Wizard**:
+     - Separated the stacked monolithic modal in `components/PassCard.tsx` into a 2-step flow.
+     - **Step 1 (Auth)**: Focused exclusively on `@ku.th` email/password login and registration, complete with segmented toggle button (`เข้าสู่ระบบ` vs `ลงทะเบียนใหม่`).
+     - **Step 2 (Pass Info)**: Displays verified email chip with "สลับบัญชี" (switch account) link, followed by student ID, name, and year level inputs.
+  2. **Step Indicator & Smart Navigation**:
+     - Added dual progress bar indicators tracking active step.
+     - Automatically routes existing users (with valid session or profile) straight to Step 2 for 1-click editing without repetitive auth.
+     - Allows jumping back to Step 1 smoothly via "สลับบัญชี" or back link.
+- **Key decisions made**:
+  - Eliminates long scroll view on mobile screens.
+  - Followed minimalist black/white Apple-like typography aesthetic.
+  - TypeScript checked: zero type errors (`npx tsc --noEmit` code 0).
+- **What remains**:
+  - Live verification on mobile/tablet devices.
