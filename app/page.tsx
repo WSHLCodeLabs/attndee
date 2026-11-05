@@ -1144,40 +1144,49 @@ export default function HomePage() {
                 <table className="w-full text-xs sm:text-sm" style={{ borderCollapse: 'collapse' }}>
                   <thead className="sticky top-0 z-10">
                     <tr>
-                      <th className="border-b border-r border-gray-200 px-2 py-2.5 bg-gray-100 font-semibold text-center text-gray-600 w-12 flex-shrink-0">
+                      <th className="border-b border-r border-gray-200 px-1.5 py-2 bg-gray-100 font-semibold text-center text-gray-600 w-10 min-w-[40px] flex-shrink-0 text-xs">
                         #
                       </th>
                       {visibleColumnIndices.map((i) => {
                         const header = parsedRoster.columnHeaders[i] || `Col ${i + 1}`;
                         const isIdColumn = header === selectedIdColumn;
                         const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
+                        const isHistoricalDateCol = historicalAttendanceColIndices.includes(i);
                         const isSeqCol = i === 1; // Column B (ลำดับที่)
+
+                        let colStyleClass = 'px-2.5 text-left';
+                        if (isSeqCol) {
+                          colStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center';
+                        } else if (isHistoricalDateCol || isAttendanceCol) {
+                          colStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center';
+                        } else if (isIdColumn) {
+                          colStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 text-left';
+                        }
+
+                        const colBgClass = isIdColumn
+                          ? 'bg-[#0051fc] text-white cursor-pointer'
+                          : isAttendanceCol
+                          ? 'bg-[#2bb673] text-white cursor-default'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer';
+
                         return (
                           <th
                             key={i}
                             onClick={() => {
                               if (!isAttendanceCol) handleColumnClick(i);
                             }}
-                            className={`border-b border-r border-gray-200 py-2.5 font-semibold text-left transition-colors whitespace-nowrap ${
-                              isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center' : 'px-3'
-                            } ${
-                              isIdColumn
-                                ? 'bg-[#0051fc] text-white cursor-pointer'
-                                : isAttendanceCol
-                                ? 'bg-[#2bb673] text-white cursor-default'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
-                            }`}
+                            className={`border-b border-r border-gray-200 py-2 font-semibold transition-colors whitespace-nowrap text-xs ${colStyleClass} ${colBgClass}`}
                           >
-                            <div className={`flex items-center gap-2 ${isSeqCol ? 'justify-center' : 'justify-between'}`}>
-                              <span>{header}</span>
-                              {isIdColumn && (
-                                <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold">
+                            <div className={`flex items-center gap-1.5 ${isSeqCol || isHistoricalDateCol || isAttendanceCol ? 'justify-center' : 'justify-between'}`}>
+                              <span className="truncate">{header}</span>
+                              {isIdColumn && header.trim() !== 'รหัสนิสิต' && (
+                                <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
                                   รหัสนิสิต
                                 </span>
                               )}
                               {isAttendanceCol && (
-                                <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold">
-                                  ช่องเติมคะแนนวันนี้
+                                <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
+                                  วันนี้
                                 </span>
                               )}
                             </div>
@@ -1186,8 +1195,8 @@ export default function HomePage() {
                       })}
 
                       {/* Sticky Right-locked Purple Summary Column */}
-                      <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-3.5 py-2.5 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] min-w-[140px]">
-                        <div className="flex items-center justify-center gap-1.5">
+                      <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-2 py-2 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] w-24 min-w-[96px] max-w-[104px] text-xs">
+                        <div className="flex items-center justify-center">
                           <span>มา / สาย / ขาด</span>
                         </div>
                       </th>
@@ -1204,13 +1213,14 @@ export default function HomePage() {
                           key={actualRowIndex}
                           className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'}
                         >
-                          <td className="border-b border-r border-gray-200 px-2 py-2 text-center text-gray-400 font-mono text-xs w-12">
+                          <td className="border-b border-r border-gray-200 px-1 py-1.5 sm:py-2 text-center text-gray-400 font-mono text-xs w-10 min-w-[40px]">
                             {rowIdx + 1}
                           </td>
                           {visibleColumnIndices.map((colIdx) => {
                             const isIdColumn =
                               parsedRoster.columnHeaders[colIdx] === selectedIdColumn;
                             const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
+                            const isHistoricalDateCol = historicalAttendanceColIndices.includes(colIdx);
                             const isSeqCol = colIdx === 1; // Column B (ลำดับที่)
                             const val = row[colIdx];
 
@@ -1219,7 +1229,7 @@ export default function HomePage() {
                                 return (
                                   <td
                                     key={colIdx}
-                                    className="border-b border-r border-[#2bb673]/30 px-3 py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap"
+                                    className="border-b border-r border-[#2bb673]/30 px-1.5 py-1.5 sm:py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap w-20 min-w-[70px] max-w-[84px] text-xs sm:text-sm"
                                   >
                                     {isHeaderRow ? todayDateLabel : '—'}
                                   </td>
@@ -1229,19 +1239,24 @@ export default function HomePage() {
                               return (
                                 <td
                                   key={colIdx}
-                                  className="border-b border-r border-gray-200 px-3 py-2 text-gray-700"
+                                  className="border-b border-r border-gray-200 px-1.5 py-1.5 sm:py-2 text-gray-700 w-20 min-w-[70px] max-w-[84px]"
                                 />
                               );
+                            }
+
+                            let tdStyleClass = 'px-2.5 max-w-[180px] text-gray-700';
+                            if (isSeqCol) {
+                              tdStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center font-mono text-gray-700';
+                            } else if (isHistoricalDateCol) {
+                              tdStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center font-mono text-gray-700';
+                            } else if (isIdColumn) {
+                              tdStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 bg-blue-50/50 font-semibold text-black font-mono';
                             }
 
                             return (
                               <td
                                 key={colIdx}
-                                className={`border-b border-r border-gray-200 py-2 text-gray-700 truncate ${
-                                  isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center font-mono' : 'px-3 max-w-[200px]'
-                                } ${
-                                  isIdColumn ? 'bg-blue-50/50 font-semibold text-black font-mono' : ''
-                                }`}
+                                className={`border-b border-r border-gray-200 py-1.5 sm:py-2 truncate text-xs sm:text-sm ${tdStyleClass}`}
                               >
                                 {val !== undefined && val !== null && String(val).trim() !== ''
                                   ? String(val)
@@ -1251,7 +1266,7 @@ export default function HomePage() {
                           })}
 
                           {/* Sticky Right-locked Purple Summary Cell */}
-                          <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-3 py-2 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs ${
+                          <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-2 py-1.5 sm:py-2 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs w-24 min-w-[96px] max-w-[104px] ${
                             isHeaderRow
                               ? 'bg-purple-100/80 text-purple-900 font-semibold'
                               : isStudentRow
@@ -1391,40 +1406,49 @@ export default function HomePage() {
               <table className="w-full text-xs sm:text-sm" style={{ borderCollapse: 'collapse' }}>
                 <thead className="sticky top-0 z-10 shadow-xs">
                   <tr>
-                    <th className="border-b border-r border-gray-200 px-2 py-3 bg-gray-100 font-semibold text-center text-gray-600 w-12 flex-shrink-0">
+                    <th className="border-b border-r border-gray-200 px-1.5 py-2 bg-gray-100 font-semibold text-center text-gray-600 w-10 min-w-[40px] flex-shrink-0 text-xs">
                       #
                     </th>
                     {visibleColumnIndices.map((i) => {
                       const header = parsedRoster.columnHeaders[i] || `Col ${i + 1}`;
                       const isIdColumn = header === selectedIdColumn;
                       const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
+                      const isHistoricalDateCol = historicalAttendanceColIndices.includes(i);
                       const isSeqCol = i === 1; // Column B (ลำดับที่)
+
+                      let colStyleClass = 'px-2.5 text-left';
+                      if (isSeqCol) {
+                        colStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center';
+                      } else if (isHistoricalDateCol || isAttendanceCol) {
+                        colStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center';
+                      } else if (isIdColumn) {
+                        colStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 text-left';
+                      }
+
+                      const colBgClass = isIdColumn
+                        ? 'bg-[#0051fc] text-white cursor-pointer'
+                        : isAttendanceCol
+                        ? 'bg-[#2bb673] text-white cursor-default'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer';
+
                       return (
                         <th
                           key={i}
                           onClick={() => {
                             if (!isAttendanceCol) handleColumnClick(i);
                           }}
-                          className={`border-b border-r border-gray-200 py-3 font-semibold text-left transition-colors whitespace-nowrap ${
-                            isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center' : 'px-3.5'
-                          } ${
-                            isIdColumn
-                              ? 'bg-[#0051fc] text-white cursor-pointer'
-                              : isAttendanceCol
-                              ? 'bg-[#2bb673] text-white cursor-default'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
-                          }`}
+                          className={`border-b border-r border-gray-200 py-2 font-semibold transition-colors whitespace-nowrap text-xs ${colStyleClass} ${colBgClass}`}
                         >
-                          <div className={`flex items-center gap-2 ${isSeqCol ? 'justify-center' : 'justify-between'}`}>
-                            <span>{header}</span>
-                            {isIdColumn && (
-                              <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold">
+                          <div className={`flex items-center gap-1.5 ${isSeqCol || isHistoricalDateCol || isAttendanceCol ? 'justify-center' : 'justify-between'}`}>
+                            <span className="truncate">{header}</span>
+                            {isIdColumn && header.trim() !== 'รหัสนิสิต' && (
+                              <span className="text-[10px] bg-white text-[#0051fc] px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
                                 รหัสนิสิต
                               </span>
                             )}
                             {isAttendanceCol && (
-                              <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold">
-                                ช่องเติมคะแนนวันนี้
+                              <span className="text-[10px] bg-white text-[#1f9d5c] px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
+                                วันนี้
                               </span>
                             )}
                           </div>
@@ -1433,8 +1457,8 @@ export default function HomePage() {
                     })}
 
                     {/* Sticky Right-locked Purple Summary Column */}
-                    <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-4 py-3 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] min-w-[140px]">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-2 py-2 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] w-24 min-w-[96px] max-w-[104px] text-xs">
+                      <div className="flex items-center justify-center">
                         <span>มา / สาย / ขาด</span>
                       </div>
                     </th>
@@ -1451,13 +1475,14 @@ export default function HomePage() {
                         key={actualRowIndex}
                         className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'}
                       >
-                        <td className="border-b border-r border-gray-200 px-2 py-2.5 text-center text-gray-400 font-mono text-xs w-12">
+                        <td className="border-b border-r border-gray-200 px-1 py-1.5 sm:py-2 text-center text-gray-400 font-mono text-xs w-10 min-w-[40px]">
                           {rowIdx + 1}
                         </td>
                         {visibleColumnIndices.map((colIdx) => {
                           const isIdColumn =
                             parsedRoster.columnHeaders[colIdx] === selectedIdColumn;
                           const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
+                          const isHistoricalDateCol = historicalAttendanceColIndices.includes(colIdx);
                           const isSeqCol = colIdx === 1; // Column B (ลำดับที่)
                           const val = row[colIdx];
 
@@ -1466,7 +1491,7 @@ export default function HomePage() {
                               return (
                                 <td
                                   key={colIdx}
-                                  className="border-b border-r border-[#2bb673]/30 px-3 py-2.5 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap"
+                                  className="border-b border-r border-[#2bb673]/30 px-1.5 py-1.5 sm:py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap w-20 min-w-[70px] max-w-[84px] text-xs sm:text-sm"
                                 >
                                   {isHeaderRow ? todayDateLabel : '—'}
                                 </td>
@@ -1476,19 +1501,24 @@ export default function HomePage() {
                             return (
                               <td
                                 key={colIdx}
-                                className="border-b border-r border-gray-200 px-3 py-2.5 text-gray-700"
+                                className="border-b border-r border-gray-200 px-1.5 py-1.5 sm:py-2 text-gray-700 w-20 min-w-[70px] max-w-[84px]"
                               />
                             );
+                          }
+
+                          let tdStyleClass = 'px-2.5 max-w-[180px] text-gray-700';
+                          if (isSeqCol) {
+                            tdStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center font-mono text-gray-700';
+                          } else if (isHistoricalDateCol) {
+                            tdStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center font-mono text-gray-700';
+                          } else if (isIdColumn) {
+                            tdStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 bg-blue-50/50 font-semibold text-black font-mono';
                           }
 
                           return (
                             <td
                               key={colIdx}
-                              className={`border-b border-r border-gray-200 py-2.5 text-gray-700 truncate ${
-                                isSeqCol ? 'w-14 min-w-[56px] max-w-[64px] px-2 text-center font-mono' : 'px-3.5 max-w-[240px]'
-                              } ${
-                                isIdColumn ? 'bg-blue-50/50 font-semibold text-black font-mono' : ''
-                              }`}
+                              className={`border-b border-r border-gray-200 py-1.5 sm:py-2 truncate text-xs sm:text-sm ${tdStyleClass}`}
                             >
                               {val !== undefined && val !== null && String(val).trim() !== ''
                                 ? String(val)
@@ -1498,7 +1528,7 @@ export default function HomePage() {
                         })}
 
                         {/* Sticky Right-locked Purple Summary Cell */}
-                        <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-4 py-2.5 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs ${
+                        <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-2 py-1.5 sm:py-2 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs w-24 min-w-[96px] max-w-[104px] ${
                           isHeaderRow
                             ? 'bg-purple-100/80 text-purple-900 font-semibold'
                             : isStudentRow

@@ -286,16 +286,24 @@ During the architectural audit and pre-production refactoring passes, several cr
 - **What remains**:
   - Live verification on mobile/tablet devices.
 
-### [2026-11-05] High-Visibility In-Place Confirmation Card for Attendance Score Changes
+### [2026-11-05] Compact & Polished XLSX Preview Table UI
 - **What was done**:
-  1. **Redesigned Score Confirmation UX**:
-     - Upgraded `renderQuickScoreButtons` in `app/room/[id]/page.tsx` from small appended buttons to an unmistakable, high-visibility confirmation card that replaces the 3 pills on click.
-     - Displays `เปลี่ยนเป็น {คะแนน}?` in a warm amber badge with a prominent black `[✓ ยืนยัน]` button and white `[ยกเลิก]` button.
-     - Safeguarded `student_id` type coercion (`String(student.student_id ?? '').trim()`).
-  2. **Zero Row Overflow**:
-     - Prevents row width overflow on mobile/tablet viewports by swapping out the score buttons rather than squeezing 5 buttons into one row.
+  1. **Compact Attendance and Historical Date Columns**:
+     - Updated both embedded card preview and fullscreen modal tables in `app/page.tsx`.
+     - Standardized historical date columns (L, M, etc.) and today's active attendance column (N) to compact width (`w-20 min-w-[70px] max-w-[84px]`), centered text alignment, and `font-mono`.
+  2. **Cleaned Header Badges**:
+     - Simplified today's attendance column header badge from long "ช่องเติมคะแนนวันนี้" to compact "วันนี้" to prevent header expansion.
+     - Removed redundant `[รหัสนิสิต]` tag when column header is already "รหัสนิสิต".
+  3. **Optimized Column Widths & Row Padding**:
+     - Row index (`#`) column reduced to `w-10 min-w-[40px] px-1.5 text-center text-xs`.
+     - Sequence (`ลำดับที่`) column reduced to `w-12 min-w-[48px] max-w-[56px] px-1 text-center`.
+     - Student ID column set to `min-w-[110px] max-w-[130px] px-2.5 font-mono`.
+     - Sticky purple summary column (`มา / สาย / ขาด`) reduced from `min-w-[140px]` to `w-24 min-w-[96px] max-w-[104px] text-xs`.
+     - Reduced `th` padding to `py-2` and `td` padding to `py-1.5 sm:py-2`.
+  4. **Preserved Layout Ergonomics**:
+     - Kept natural bottom whitespace for clean modal viewport composition as requested by user.
 - **Key decisions made**:
-  - Unmistakable UI feedback: teacher clearly sees the confirmation prompt and target score before committing.
-  - TypeScript checked with 0 errors (`npx tsc --noEmit`).
+  - Eliminates excessive horizontal whitespace while keeping all data legible and aligned like professional spreadsheets.
+  - Verified with `npx tsc --noEmit` (exit code 0) and dev server curl HTTP 200.
 - **What remains**:
-  - Live verification with user.
+  - Ready for instructor testing in live sessions.
