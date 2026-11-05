@@ -255,15 +255,14 @@ export default function PassCard({
                 </div>
               </div>
             ) : (
-              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3">
+              <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0 font-bold text-xs">
-                    ✓
+                  <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center flex-shrink-0 text-xs font-bold">
+                    {verifiedEmail[0]?.toUpperCase() || 'U'}
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xs text-emerald-800 font-semibold">ยืนยันบัญชี @ku.th สำเร็จ</p>
-                    <p className="text-xs text-emerald-600 font-mono truncate">{verifiedEmail}</p>
-                  </div>
+                  <span className="text-xs sm:text-sm text-gray-800 font-mono font-medium truncate">
+                    {verifiedEmail}
+                  </span>
                 </div>
 
                 <button
@@ -272,7 +271,7 @@ export default function PassCard({
                     setVerifiedEmail(null);
                     supabase.auth.signOut().catch(() => {});
                   }}
-                  className="text-xs text-gray-500 hover:text-black underline flex-shrink-0 cursor-pointer"
+                  className="text-xs text-gray-400 hover:text-black underline flex-shrink-0 cursor-pointer"
                 >
                   เปลี่ยน
                 </button>
