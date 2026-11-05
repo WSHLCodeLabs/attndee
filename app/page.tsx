@@ -728,7 +728,7 @@ export default function HomePage() {
         type="button"
         onClick={() => handlePinCurrentLocation(true)}
         disabled={isLocating}
-        className="absolute bottom-5 right-5 z-[400] flex items-center gap-2 px-4 py-2.5 bg-[#0051fc] hover:bg-blue-700 active:scale-95 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-md transition-all disabled:opacity-60 cursor-pointer"
+        className="absolute bottom-5 right-5 z-[20] flex items-center gap-2 px-4 py-2.5 bg-[#0051fc] hover:bg-blue-700 active:scale-95 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-md transition-all disabled:opacity-60 cursor-pointer"
       >
         <MapPin size={16} className="fill-white text-[#0051fc]" />
         <span>{isLocating ? 'กำลังค้นหา...' : 'ปักพิกัดปัจจุบัน'}</span>
@@ -1338,7 +1338,7 @@ export default function HomePage() {
 
       {/* Fullscreen / Expanded Table Modal */}
       {isFullscreenPreview && hasFile && parsedRoster && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl w-full max-w-[96vw] h-[92vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center justify-between gap-4 flex-shrink-0">
@@ -1349,9 +1349,6 @@ export default function HomePage() {
                   </h3>
                   <span className="text-xs px-2.5 py-0.5 bg-gray-100 text-black rounded-full font-semibold flex-shrink-0">
                     {parsedRoster.students.length} คน
-                  </span>
-                  <span className="text-xs px-2.5 py-0.5 bg-blue-50 text-[#0051fc] border border-blue-200 rounded-full font-semibold flex-shrink-0">
-                    รหัสนิสิต: คอลัมน์ {selectedIdColumn}
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
