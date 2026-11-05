@@ -31,64 +31,97 @@ export default function PassCard({
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(
     initialProfile?.email || null
   );
+
+  // Email & Password Auth State for Students (Supabase Auth)
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
 
-  // Check if student has already authenticated with Google
+  // Check if student has already authenticated with Supabase on this device
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user?.email) {
-        const email = session.user.email.toLowerCase();
-        if (email.endsWith('@ku.th') || email.includes('ku.th')) {
-          setVerifiedEmail(email);
-          // If first/last name empty, try to pre-fill from Google metadata
-          if (!firstName && session.user.user_metadata?.full_name) {
-            const parts = session.user.user_metadata.full_name.trim().split(/\s+/);
-            if (parts[0]) setFirstName(parts[0]);
-            if (parts.length > 1) setLastName(parts.slice(1).join(' '));
+        setVerifiedEmail(session.user.email.toLowerCase());
+      }
+    });
+  }, []);
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = authEmail.trim().toLowerCase();
+
+    if (!cleanEmail || !authPassword) {
+      setErrorMessage('กรุณากรอกอีเมลและรหัสผ่าน');
+      return;
+    }
+
+    if (!cleanEmail.endsWith('@ku.th')) {
+      setErrorMessage('กรุณาใช้อีเมลสถาบัน (@ku.th) เท่านั้น');
+      return;
+    }
+
+    if (authPassword.length < 6) {
+      setErrorMessage('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+      return;
+    }
+
+    setIsAuthenticating(true);
+    setErrorMessage(null);
+
+    try {
+      if (authMode === 'login') {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+        if (data.user?.email) {
+          setVerifiedEmail(data.user.email.toLowerCase());
+        }
+      } else {
+        const { data, error } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+
+        if (data.session?.user?.email) {
+          setVerifiedEmail(data.session.user.email.toLowerCase());
+        } else {
+          // If auto sign-in not enabled on signup, do sign in immediately
+          const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: authPassword,
+          });
+          if (signInErr) throw signInErr;
+          if (signInData.user?.email) {
+            setVerifiedEmail(signInData.user.email.toLowerCase());
           }
         }
       }
-    });
-  }, [firstName]);
-
-  const handleGoogleSignIn = async () => {
-    setIsAuthenticating(true);
-    setErrorMessage(null);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          queryParams: {
-            hd: 'ku.th',
-            prompt: 'select_account',
-          },
-          redirectTo: typeof window !== 'undefined' ? window.location.href : undefined,
-        },
-      });
-      if (error) throw error;
+      setAuthPassword('');
     } catch (err) {
-      console.error('Google Sign-in error:', err);
-      setErrorMessage(
-        err instanceof Error ? err.message : 'ไม่สามารถเชื่อมต่อกับ Google ได้'
-      );
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      if (msg.includes('invalid login') || msg.includes('invalid credentials')) {
+        setErrorMessage('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+      } else if (msg.includes('already registered')) {
+        setErrorMessage('อีเมลนี้ลงทะเบียนแล้ว กรุณาเลือก "เข้าสู่ระบบ"');
+        setAuthMode('login');
+      } else {
+        setErrorMessage(err instanceof Error ? err.message : 'การยืนยันตัวตนไม่สำเร็จ');
+      }
+    } finally {
       setIsAuthenticating(false);
     }
   };
 
-  // Development bypass helper for localhost testing when Google OAuth credentials aren't configured yet
-  const handleDevBypassSignIn = () => {
-    const demoEmail = 'student.demo@ku.th';
-    setVerifiedEmail(demoEmail);
-    if (!firstName) setFirstName('นิสิต');
-    if (!lastName) setLastName('ทดสอบ');
-    if (!studentId) setStudentId('6621650000');
-  };
-
   const handleCreatePass = () => {
     if (!verifiedEmail) {
-      setErrorMessage('กรุณาเข้าสู่ระบบด้วย Google (@ku.th) ก่อนสร้างบัตร');
+      setErrorMessage('กรุณาเข้าสู่ระบบด้วยอีเมล @ku.th ก่อนสร้างบัตร');
       return;
     }
 
@@ -107,6 +140,7 @@ export default function PassCard({
       last_updated_at: new Date().toISOString(),
     };
 
+    // Store in localStorage permanently for this device
     localStorage.setItem('attndee_pass', JSON.stringify(newProfile));
 
     setIsAnimatingOut(true);
@@ -173,7 +207,7 @@ export default function PassCard({
               Attndee<span className="text-blue-600">.</span> Pass™
             </h2>
             <p className="text-gray-600 text-sm">
-              {initialProfile ? 'แก้ไขข้อมูลบัตรนิสิตดิจิทัลของคุณ' : 'สร้างบัตรนิสิตดิจิทัลประจำตัวของคุณ (ยืนยันด้วยบัญชี @ku.th)'}
+              {initialProfile ? 'แก้ไขข้อมูลบัตรนิสิตดิจิทัลของคุณ' : 'สร้างบัตรนิสิตประจำตัว (ยืนยันบัญชี @ku.th)'}
             </p>
           </div>
 
@@ -185,75 +219,62 @@ export default function PassCard({
             </div>
           )}
 
-          {/* STEP 1: Google OAuth (@ku.th) Authentication Box */}
+          {/* STEP 1: Supabase Email/Password Auth (@ku.th) */}
           <div className="mb-6">
             {!verifiedEmail ? (
-              <div className="p-5 bg-neutral-50 border border-neutral-200 rounded-2xl text-center space-y-3">
-                <div className="w-10 h-10 rounded-full bg-white shadow-xs border border-gray-200 mx-auto flex items-center justify-center">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
+              <form onSubmit={handleAuthSubmit} className="p-5 bg-neutral-50 border border-neutral-200 rounded-2xl space-y-3.5">
+                <div className="flex items-center justify-between pb-1">
+                  <h4 className="text-sm font-bold text-black">
+                    {authMode === 'login' ? 'เข้าสู่ระบบบัญชีนิสิต' : 'ลงทะเบียนบัญชีใหม่'}
+                  </h4>
+                  <div className="flex items-center text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode(authMode === 'login' ? 'signup' : 'login');
+                        setErrorMessage(null);
+                      }}
+                      className="text-[#0051fc] hover:underline font-semibold cursor-pointer"
+                    >
+                      {authMode === 'login' ? 'ยังไม่มีบัญชี? สมัคร' : 'มีบัญชีแล้ว? เข้าสู่ระบบ'}
+                    </button>
+                  </div>
                 </div>
+
                 <div>
-                  <h4 className="text-sm font-bold text-black">ยืนยันตัวตนด้วย Google</h4>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    เข้าสู่ระบบด้วยบัญชีสถาบัน (@ku.th) เพื่อยืนยันสิทธิ์นิสิต
-                  </p>
+                  <input
+                    type="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="อีเมลสถาบัน เช่น name@ku.th"
+                    className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-sm text-black focus:outline-none focus:border-black font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <input
+                    type="password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)"
+                    className="w-full px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl text-sm text-black focus:outline-none focus:border-black"
+                    required
+                  />
                 </div>
 
                 <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
+                  type="submit"
                   disabled={isAuthenticating}
-                  className="w-full py-3 px-4 bg-white hover:bg-gray-50 active:scale-98 border-2 border-gray-200 hover:border-black rounded-xl text-sm font-bold text-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-60"
+                  className="w-full py-2.5 bg-black hover:bg-neutral-800 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-60 cursor-pointer shadow-xs"
                 >
-                  <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
-                  <span>{isAuthenticating ? 'กำลังเชื่อมต่อ Google...' : 'เข้าสู่ระบบด้วย Google (@ku.th)'}</span>
+                  {isAuthenticating
+                    ? 'กำลังประมวลผล...'
+                    : authMode === 'login'
+                    ? 'เข้าสู่ระบบ'
+                    : 'สมัครสมาชิก'}
                 </button>
-
-                {/* Development bypass button (for localhost or testing without cloud credentials) */}
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={handleDevBypassSignIn}
-                    className="text-[11px] text-gray-400 hover:text-gray-600 underline cursor-pointer"
-                  >
-                    จำลองเข้าสู่ระบบ @ku.th (โหมดทดสอบ)
-                  </button>
-                </div>
-              </div>
+              </form>
             ) : (
               <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -273,7 +294,7 @@ export default function PassCard({
                   }}
                   className="text-xs text-gray-400 hover:text-black underline flex-shrink-0 cursor-pointer"
                 >
-                  เปลี่ยน
+                  สลับบัญชี
                 </button>
               </div>
             )}

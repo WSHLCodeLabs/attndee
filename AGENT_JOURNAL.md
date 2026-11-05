@@ -213,3 +213,23 @@ During the architectural audit and pre-production refactoring passes, several cr
 
 
 
+
+### [2026-11-05] Student Authentication with Supabase Email/Password (@ku.th) & Persistent Device Pass
+- **What was done**:
+  1. **Switched Student Pass Auth to Standard Supabase Auth**:
+     - Removed Google OAuth flow from `components/PassCard.tsx` to eliminate external Google Cloud Console / OAuth Consent setup overhead.
+     - Implemented direct email/password login and registration (`supabase.auth.signInWithPassword` & `supabase.auth.signUp`) directly in `PassCard.tsx`.
+  2. **Enforced @ku.th Domain Restriction**:
+     - Added strict domain validation requiring emails to end with `@ku.th`.
+     - Added password length validation (minimum 6 characters).
+     - Added clear Thai error handling for existing account, invalid credentials, and format errors.
+  3. **Device Persistence & Minimalist Identity Display**:
+     - Student pass credentials and verification state are stored permanently in `localStorage.setItem('attndee_pass')`, enabling zero-friction fast-path check-in without re-login on future visits.
+     - Removed clunky/awkward verification badges, replaced with a clean email account chip showing avatar initial, user email, and a minimalist "สลับบัญชี" (switch account) link.
+     - Updated check-in status card in `app/checkin/[id]/page.tsx` to display `{student_id} • {student_email}` cleanly.
+- **Key decisions made**:
+  - Maintained self-contained auth within Supabase without external OAuth dependencies.
+  - Retained minimalist, typography-driven Attndee black/white aesthetic.
+  - Zero TypeScript errors (`npx tsc --noEmit` verified exit code 0).
+- **What remains**:
+  - Live verification on mobile/tablet devices.

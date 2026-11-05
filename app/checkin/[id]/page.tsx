@@ -1026,7 +1026,7 @@ export default function CheckInPage() {
                   {profile.first_name} {profile.last_name}
                 </h2>
                 <p className="text-gray-600 text-xs mt-0.5 font-mono">
-                  {profile.student_id}
+                  {profile.student_id}{profile.email ? ` • ${profile.email}` : ''}
                 </p>
               </div>
 
