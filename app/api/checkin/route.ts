@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
       last_name,
       year_level,
       device_fingerprint,
+      student_email,
       is_manual_override = false,
     } = body;
 

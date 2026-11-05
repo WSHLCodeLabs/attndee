@@ -324,6 +324,7 @@ export default function CheckInPage() {
         last_name: studentProfile.last_name,
         year_level: studentProfile.year_level,
         device_fingerprint: fingerprint,
+        student_email: studentProfile.email || undefined,
       };
 
       const response = await fetch('/api/checkin', {
