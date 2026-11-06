@@ -1153,14 +1153,17 @@ export default function HomePage() {
                         const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
                         const isHistoricalDateCol = historicalAttendanceColIndices.includes(i);
                         const isSeqCol = i === 1; // Column B (ลำดับที่)
+                        const isNameCol = header.includes('ชื่อ') || header.toLowerCase().includes('name');
 
-                        let colStyleClass = 'px-2.5 text-left';
+                        let colStyleClass = 'w-44 min-w-[150px] max-w-[180px] px-2.5 text-left';
                         if (isSeqCol) {
                           colStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center';
                         } else if (isHistoricalDateCol || isAttendanceCol) {
-                          colStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center';
+                          colStyleClass = 'w-24 min-w-[88px] max-w-[96px] px-1 text-center';
                         } else if (isIdColumn) {
-                          colStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 text-left';
+                          colStyleClass = 'w-32 min-w-[110px] max-w-[130px] px-2.5 text-left';
+                        } else if (isNameCol) {
+                          colStyleClass = 'w-48 min-w-[160px] max-w-[200px] px-2.5 text-left';
                         }
 
                         const colBgClass = isIdColumn
@@ -1194,10 +1197,13 @@ export default function HomePage() {
                         );
                       })}
 
+                      {/* Spacer to absorb excess width on widescreen and keep columns compact */}
+                      <th className="border-b border-gray-200 bg-gray-50/40 p-0 pointer-events-none" />
+
                       {/* Sticky Right-locked Purple Summary Column */}
                       <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-2 py-2 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] w-24 min-w-[96px] max-w-[104px] text-xs">
                         <div className="flex items-center justify-center">
-                          <span>มา / สาย / ขาด</span>
+                          <span>คะแนนรวม</span>
                         </div>
                       </th>
                     </tr>
@@ -1222,6 +1228,8 @@ export default function HomePage() {
                             const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
                             const isHistoricalDateCol = historicalAttendanceColIndices.includes(colIdx);
                             const isSeqCol = colIdx === 1; // Column B (ลำดับที่)
+                            const header = parsedRoster.columnHeaders[colIdx] || '';
+                            const isNameCol = header.includes('ชื่อ') || header.toLowerCase().includes('name');
                             const val = row[colIdx];
 
                             if (isAttendanceCol) {
@@ -1229,7 +1237,7 @@ export default function HomePage() {
                                 return (
                                   <td
                                     key={colIdx}
-                                    className="border-b border-r border-[#2bb673]/30 px-1.5 py-1.5 sm:py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap w-20 min-w-[70px] max-w-[84px] text-xs sm:text-sm"
+                                    className="border-b border-r border-[#2bb673]/30 px-1 py-1.5 sm:py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap w-24 min-w-[88px] max-w-[96px] text-xs sm:text-sm"
                                   >
                                     {isHeaderRow ? todayDateLabel : '—'}
                                   </td>
@@ -1239,18 +1247,20 @@ export default function HomePage() {
                               return (
                                 <td
                                   key={colIdx}
-                                  className="border-b border-r border-gray-200 px-1.5 py-1.5 sm:py-2 text-gray-700 w-20 min-w-[70px] max-w-[84px]"
+                                  className="border-b border-r border-gray-200 px-1 py-1.5 sm:py-2 text-gray-700 w-24 min-w-[88px] max-w-[96px]"
                                 />
                               );
                             }
 
-                            let tdStyleClass = 'px-2.5 max-w-[180px] text-gray-700';
+                            let tdStyleClass = 'w-44 min-w-[150px] max-w-[180px] px-2.5 text-gray-700';
                             if (isSeqCol) {
                               tdStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center font-mono text-gray-700';
                             } else if (isHistoricalDateCol) {
-                              tdStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center font-mono text-gray-700';
+                              tdStyleClass = 'w-24 min-w-[88px] max-w-[96px] px-1 text-center font-mono text-gray-700';
                             } else if (isIdColumn) {
-                              tdStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 bg-blue-50/50 font-semibold text-black font-mono';
+                              tdStyleClass = 'w-32 min-w-[110px] max-w-[130px] px-2.5 bg-blue-50/50 font-semibold text-black font-mono';
+                            } else if (isNameCol) {
+                              tdStyleClass = 'w-48 min-w-[160px] max-w-[200px] px-2.5 text-gray-800';
                             }
 
                             return (
@@ -1265,21 +1275,24 @@ export default function HomePage() {
                             );
                           })}
 
-                          {/* Sticky Right-locked Purple Summary Cell */}
+                          {/* Spacer cell to absorb excess width on widescreen */}
+                          <td className="border-b border-gray-200 bg-transparent p-0" />
+
+                          {/* Sticky Right-locked Purple Summary Cell: SUM of scores */}
                           <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-2 py-1.5 sm:py-2 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs w-24 min-w-[96px] max-w-[104px] ${
                             isHeaderRow
                               ? 'bg-purple-100/80 text-purple-900 font-semibold'
                               : isStudentRow
-                              ? 'bg-[#f5f3ff] text-neutral-800'
+                              ? 'bg-[#f5f3ff] text-neutral-900 font-semibold'
                               : 'bg-white text-gray-300'
                           }`}>
                             {isHeaderRow ? (
-                              'มา / สาย / ขาด'
+                              'คะแนนรวม'
                             ) : isStudentRow ? (
                               stats ? (
-                                `${stats.onTime}/${stats.late}/${stats.absent}`
+                                `${stats.scoreSum} / ${historicalAttendanceColIndices.length}`
                               ) : (
-                                '0/0/0'
+                                `0 / ${historicalAttendanceColIndices.length}`
                               )
                             ) : (
                               ''
@@ -1415,14 +1428,17 @@ export default function HomePage() {
                       const isAttendanceCol = i === parsedRoster.nextAttendanceColIndex;
                       const isHistoricalDateCol = historicalAttendanceColIndices.includes(i);
                       const isSeqCol = i === 1; // Column B (ลำดับที่)
+                      const isNameCol = header.includes('ชื่อ') || header.toLowerCase().includes('name');
 
-                      let colStyleClass = 'px-2.5 text-left';
+                      let colStyleClass = 'w-44 min-w-[150px] max-w-[180px] px-2.5 text-left';
                       if (isSeqCol) {
                         colStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center';
                       } else if (isHistoricalDateCol || isAttendanceCol) {
-                        colStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center';
+                        colStyleClass = 'w-24 min-w-[88px] max-w-[96px] px-1 text-center';
                       } else if (isIdColumn) {
-                        colStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 text-left';
+                        colStyleClass = 'w-32 min-w-[110px] max-w-[130px] px-2.5 text-left';
+                      } else if (isNameCol) {
+                        colStyleClass = 'w-48 min-w-[160px] max-w-[200px] px-2.5 text-left';
                       }
 
                       const colBgClass = isIdColumn
@@ -1456,10 +1472,13 @@ export default function HomePage() {
                       );
                     })}
 
+                    {/* Spacer to absorb excess width on widescreen and keep columns compact */}
+                    <th className="border-b border-gray-200 bg-gray-50/40 p-0 pointer-events-none" />
+
                     {/* Sticky Right-locked Purple Summary Column */}
                     <th className="sticky right-0 z-20 border-b border-l border-purple-200 px-2 py-2 bg-[#8b5cf6] text-white font-bold text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.15)] w-24 min-w-[96px] max-w-[104px] text-xs">
                       <div className="flex items-center justify-center">
-                        <span>มา / สาย / ขาด</span>
+                        <span>คะแนนรวม</span>
                       </div>
                     </th>
                   </tr>
@@ -1484,6 +1503,8 @@ export default function HomePage() {
                           const isAttendanceCol = colIdx === parsedRoster.nextAttendanceColIndex;
                           const isHistoricalDateCol = historicalAttendanceColIndices.includes(colIdx);
                           const isSeqCol = colIdx === 1; // Column B (ลำดับที่)
+                          const header = parsedRoster.columnHeaders[colIdx] || '';
+                          const isNameCol = header.includes('ชื่อ') || header.toLowerCase().includes('name');
                           const val = row[colIdx];
 
                           if (isAttendanceCol) {
@@ -1491,7 +1512,7 @@ export default function HomePage() {
                               return (
                                 <td
                                   key={colIdx}
-                                  className="border-b border-r border-[#2bb673]/30 px-1.5 py-1.5 sm:py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap w-20 min-w-[70px] max-w-[84px] text-xs sm:text-sm"
+                                  className="border-b border-r border-[#2bb673]/30 px-1 py-1.5 sm:py-2 bg-[#f4fbf7] text-[#1f9d5c] font-mono font-semibold text-center whitespace-nowrap w-24 min-w-[88px] max-w-[96px] text-xs sm:text-sm"
                                 >
                                   {isHeaderRow ? todayDateLabel : '—'}
                                 </td>
@@ -1501,18 +1522,20 @@ export default function HomePage() {
                             return (
                               <td
                                 key={colIdx}
-                                className="border-b border-r border-gray-200 px-1.5 py-1.5 sm:py-2 text-gray-700 w-20 min-w-[70px] max-w-[84px]"
+                                className="border-b border-r border-gray-200 px-1 py-1.5 sm:py-2 text-gray-700 w-24 min-w-[88px] max-w-[96px]"
                               />
                             );
                           }
 
-                          let tdStyleClass = 'px-2.5 max-w-[180px] text-gray-700';
+                          let tdStyleClass = 'w-44 min-w-[150px] max-w-[180px] px-2.5 text-gray-700';
                           if (isSeqCol) {
                             tdStyleClass = 'w-12 min-w-[48px] max-w-[56px] px-1 text-center font-mono text-gray-700';
                           } else if (isHistoricalDateCol) {
-                            tdStyleClass = 'w-20 min-w-[70px] max-w-[84px] px-1.5 text-center font-mono text-gray-700';
+                            tdStyleClass = 'w-24 min-w-[88px] max-w-[96px] px-1 text-center font-mono text-gray-700';
                           } else if (isIdColumn) {
-                            tdStyleClass = 'min-w-[110px] max-w-[130px] px-2.5 bg-blue-50/50 font-semibold text-black font-mono';
+                            tdStyleClass = 'w-32 min-w-[110px] max-w-[130px] px-2.5 bg-blue-50/50 font-semibold text-black font-mono';
+                          } else if (isNameCol) {
+                            tdStyleClass = 'w-48 min-w-[160px] max-w-[200px] px-2.5 text-gray-800';
                           }
 
                           return (
@@ -1527,21 +1550,24 @@ export default function HomePage() {
                           );
                         })}
 
-                        {/* Sticky Right-locked Purple Summary Cell */}
+                        {/* Spacer cell to absorb excess width on widescreen */}
+                        <td className="border-b border-gray-200 bg-transparent p-0" />
+
+                        {/* Sticky Right-locked Purple Summary Cell: SUM of scores */}
                         <td className={`sticky right-0 z-10 border-b border-l border-purple-100 px-2 py-1.5 sm:py-2 text-center whitespace-nowrap shadow-[-4px_0_12px_rgba(139,92,246,0.1)] font-mono text-xs w-24 min-w-[96px] max-w-[104px] ${
                           isHeaderRow
                             ? 'bg-purple-100/80 text-purple-900 font-semibold'
                             : isStudentRow
-                            ? 'bg-[#f5f3ff] text-neutral-800'
+                            ? 'bg-[#f5f3ff] text-neutral-900 font-semibold'
                             : 'bg-white text-gray-300'
                         }`}>
                           {isHeaderRow ? (
-                            'มา / สาย / ขาด'
+                            'คะแนนรวม'
                           ) : isStudentRow ? (
                             stats ? (
-                              `${stats.onTime}/${stats.late}/${stats.absent}`
+                              `${stats.scoreSum} / ${historicalAttendanceColIndices.length}`
                             ) : (
-                              '0/0/0'
+                              `0 / ${historicalAttendanceColIndices.length}`
                             )
                           ) : (
                             ''

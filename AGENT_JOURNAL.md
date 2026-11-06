@@ -307,3 +307,21 @@ During the architectural audit and pre-production refactoring passes, several cr
   - Verified with `npx tsc --noEmit` (exit code 0) and dev server curl HTTP 200.
 - **What remains**:
   - Ready for instructor testing in live sessions.
+
+### [2026-11-06] Constrain Name Columns, Fix Date Truncation, and Sum Total Scores
+- **What was done**:
+  1. **Constrained Name Columns (Col D & Col E)**:
+     - Constrained Thai name column to `w-44 min-w-[150px] max-w-[180px] px-2.5`.
+     - Constrained English name column to `w-48 min-w-[160px] max-w-[200px] px-2.5`.
+     - Added an invisible filler/spacer column before the sticky purple column to naturally absorb excess whitespace on widescreen displays without stretching data columns.
+  2. **Fixed Date Column Ellipsis Truncation**:
+     - Increased date column width from `w-20 min-w-[70px] max-w-[84px]` to `w-24 min-w-[88px] max-w-[96px] px-1 text-center font-mono`.
+     - Full 10-character dates (e.g., `31/10/2569`, `5/11/2569`) now render completely without truncation (`..`).
+  3. **Converted Summary Column to Score SUM**:
+     - Changed purple sticky column header from `"มา / สาย / ขาด"` to `"คะแนนรวม"`.
+     - Replaced ratio format with direct score sum: `{stats.scoreSum} / {totalSessions}` (e.g. `4.5 / 5`, `3 / 5`, `1 / 5`).
+- **Key decisions made**:
+  - Direct score sums align intuitively with grading needs (1 session = 1.0, late = 0.5, absent = 0).
+  - Passed `npx tsc --noEmit` cleanly (exit code 0) and verified dev server HTTP 200.
+- **What remains**:
+  - Instructor live session testing.
